@@ -37,6 +37,7 @@ dependencies:
   just_audio: ^0.10.5
   just_waveform: ^0.0.7
   logger: ^2.8.0
+  wav: ^1.5.0
 
 dev_dependencies:
   flutter_test:
