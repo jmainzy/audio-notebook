@@ -2,7 +2,7 @@ import 'dart:io';
 
 import 'package:audionotebook/ui/audio_detail_page.dart';
 import 'package:audionotebook/model/audio_item.dart';
-import 'package:audionotebook/utils.dart';
+import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
 
@@ -139,15 +139,17 @@ class _HomePageState extends State<HomePage> {
                         child: Center(child: CircularProgressIndicator()),
                       );
                     }
-                    if (snapshot.hasError)
+                    if (snapshot.hasError) {
                       return const _EmptyState(
                         message: 'Could not read example_audio.',
                       );
+                    }
                     final entries = snapshot.data ?? [];
-                    if (entries.isEmpty)
+                    if (entries.isEmpty) {
                       return const _EmptyState(
                         message: 'Add audio files to ~/example_audio.',
                       );
+                    }
                     return Column(
                       children: [
                         for (final entry in entries)

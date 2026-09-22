@@ -1,11 +1,17 @@
+import 'dart:core';
 import 'dart:io';
 
 import 'package:audionotebook/model/audio_item.dart';
+import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/ui/waveform.dart';
-import 'package:audionotebook/utils.dart';
+import 'package:audionotebook/utils/utils.dart';
+import 'package:audionotebook/utils/vad.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:logger/web.dart';
 import 'package:wav/wav_file.dart';
+
+Logger logger = Logger();
 
 class AudioDetailPage extends StatefulWidget {
   const AudioDetailPage({super.key, required this.entry});
@@ -18,7 +24,10 @@ class AudioDetailPage extends StatefulWidget {
 class _AudioDetailPageState extends State<AudioDetailPage> {
   final _player = AudioPlayer();
   List<double>? _audioData;
+  List<VoiceSegment> _voiceSegments = const [];
+  bool _detectingSegments = false;
   Object? _error;
+  int? sampleRate;
 
   @override
   void initState() {
@@ -36,12 +45,27 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     }
   }
 
+  Future<void> _detectSegments() async {
+    final waveform = _audioData;
+    logger.i("Detecting segments");
+    if (waveform == null || _detectingSegments) return;
+    setState(() => _detectingSegments = true);
+    final segments = await detectVoiceSegments(waveform, sampleRate!);
+    logger.i("Detected ${segments.length} segments");
+    if (!mounted) return;
+    setState(() {
+      _voiceSegments = segments;
+      _detectingSegments = false;
+    });
+  }
+
   Future<List<double>> extractAudioData(File file) async {
     // Extract file as normalized values between 0.0 and 1.0
     final bytes = await file.readAsBytes();
 
     // Read the WAV file
     Wav wav = Wav.read(bytes);
+    sampleRate = wav.samplesPerSecond;
     // Extract the audio data (left channel)
     return wav.channels[0];
   }
@@ -106,6 +130,25 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                   final position = snapshot.data ?? Duration.zero;
                   return Column(
                     children: [
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: FilledButton.icon(
+                          onPressed: _audioData == null || _detectingSegments
+                              ? null
+                              : _detectSegments,
+                          // icon: _detectingSegments
+                          //     ? const SizedBox(
+                          //         width: 16,
+                          //         height: 16,
+                          //         child: CircularProgressIndicator(
+                          //           strokeWidth: 2,
+                          //         ),
+                          //       )
+                          //     : const Icon(Icons.auto_graph),
+                          label: const Text('Detect Segments'),
+                        ),
+                      ),
+                      const SizedBox(height: 12),
                       Expanded(
                         child: Container(
                           width: double.infinity,
@@ -194,12 +237,18 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     final waveform = _audioData;
     if (waveform == null) {
       return const Center(
-        child: CircularProgressIndicator(color: Color(0xffd97757)),
+        child: CircularProgressIndicator(
+          color: Color.fromARGB(255, 195, 62, 18),
+        ),
       );
     }
     return Stack(
       children: [
-        WaveformWidget(color: Color(0xffd97757), samples: waveform),
+        WaveformWidget(
+          color: const Color.fromARGB(255, 194, 59, 14),
+          samples: waveform,
+          segments: _voiceSegments,
+        ),
         Transform.translate(
           offset: Offset(
             position.inMilliseconds /

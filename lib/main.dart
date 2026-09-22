@@ -16,11 +16,9 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color(0xffcf5b3b)),
         scaffoldBackgroundColor: const Color(0xfff5f0e8),
-        fontFamily: 'Georgia',
+        // fontFamily: 'Georgia',
       ),
       home: const HomePage(),
     );
   }
 }
-
-

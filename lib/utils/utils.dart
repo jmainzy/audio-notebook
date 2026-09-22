@@ -1,4 +1,7 @@
 import 'package:flutter/material.dart';
+import 'package:logger/web.dart';
+
+Logger logger = Logger();
 
 String formatDate(BuildContext context, DateTime date) =>
     MaterialLocalizations.of(context).formatMediumDate(date);
