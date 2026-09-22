@@ -6,7 +6,7 @@ class WaveformWidget extends StatelessWidget {
   final List<double> samples;
   final Color color;
   final List<VoiceSegment> segments;
-  final Color highlightColor = const Color.fromARGB(255, 24, 49, 173);
+  final Color highlightColor = const Color.fromARGB(255, 77, 109, 159);
 
   const WaveformWidget({
     super.key,

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:audionotebook/model/audio_item.dart';
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/ui/waveform.dart';
+import 'package:audionotebook/utils/dimens.dart' as Dimens;
 import 'package:audionotebook/utils/utils.dart';
 import 'package:audionotebook/utils/vad.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +26,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
   final _player = AudioPlayer();
   List<double>? _audioData;
   List<VoiceSegment> _voiceSegments = const [];
+  List<TextEditingController> _noteControllers = const [];
   bool _detectingSegments = false;
   Object? _error;
   int? sampleRate;
@@ -55,6 +57,13 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
     if (!mounted) return;
     setState(() {
       _voiceSegments = segments;
+      for (final controller in _noteControllers) {
+        controller.dispose();
+      }
+      _noteControllers = [
+        for (var index = 0; index < segments.length; index++)
+          TextEditingController(),
+      ];
       _detectingSegments = false;
     });
   }
@@ -72,6 +81,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
 
   @override
   void dispose() {
+    for (final controller in _noteControllers) {
+      controller.dispose();
+    }
     _player.dispose();
     super.dispose();
   }
@@ -149,7 +161,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                         ),
                       ),
                       const SizedBox(height: 12),
-                      Expanded(
+                      SizedBox(
+                        height: 160,
                         child: Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -186,7 +199,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           ),
                         ],
                       ),
-                      const SizedBox(height: 24),
+                      const SizedBox(height: 16),
+                      Expanded(child: _segmentList()),
+                      const SizedBox(height: 16),
                       StreamBuilder<PlayerState>(
                         stream: _player.playerStateStream,
                         builder: (context, snapshot) {
@@ -259,6 +274,143 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
           child: Container(width: 2, color: Colors.black),
         ),
       ],
+    );
+  }
+
+  Widget _segmentList() {
+    if (_voiceSegments.isEmpty) {
+      return const Center(
+        child: Text(
+          'Detected segments will appear here.',
+          style: TextStyle(fontFamily: 'Arial', color: Color(0xff887b70)),
+        ),
+      );
+    }
+
+    if (_noteControllers.length != _voiceSegments.length) {
+      for (final controller in _noteControllers) {
+        controller.dispose();
+      }
+      _noteControllers = [
+        for (var index = 0; index < _voiceSegments.length; index++)
+          TextEditingController(),
+      ];
+    }
+
+    return ListView.separated(
+      itemCount: _voiceSegments.length,
+      padding: EdgeInsets.zero,
+      separatorBuilder: (_, _) => const SizedBox(height: 10),
+      itemBuilder: (context, index) {
+        final segment = _voiceSegments[index];
+        final start = Duration(
+          milliseconds: (segment.start * widget.entry.duration.inMilliseconds)
+              .round(),
+        );
+        final end = Duration(
+          milliseconds: (segment.end * widget.entry.duration.inMilliseconds)
+              .round(),
+        );
+        return _SegmentCard(
+          index: index,
+          segment: segment,
+          samples: _audioData!,
+          noteController: _noteControllers[index],
+          start: start,
+          end: end,
+          onTap: () => _player.seek(start),
+        );
+      },
+    );
+  }
+}
+
+class _SegmentCard extends StatelessWidget {
+  const _SegmentCard({
+    required this.index,
+    required this.segment,
+    required this.samples,
+    required this.noteController,
+    required this.start,
+    required this.end,
+    required this.onTap,
+  });
+
+  final int index;
+  final VoiceSegment segment;
+  final List<double> samples;
+  final TextEditingController noteController;
+  final Duration start;
+  final Duration end;
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    final startSample = (segment.start * samples.length).floor().clamp(
+      0,
+      samples.length,
+    );
+    final endSample = (segment.end * samples.length).ceil().clamp(
+      startSample + 1,
+      samples.length,
+    );
+    final segmentSamples = samples.sublist(startSample, endSample);
+
+    return Material(
+      color: Colors.white.withValues(alpha: 0.82),
+      borderRadius: BorderRadius.circular(10),
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(10),
+        focusColor: Colors.white10,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(
+            Dimens.marginLarge,
+            Dimens.marginLarge,
+            Dimens.marginShort,
+            Dimens.marginLarge,
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Text(
+                    '${formatDuration(start)} - ${formatDuration(end)}',
+                    style: const TextStyle(
+                      fontFamily: 'Arial',
+                      fontSize: 12,
+                      color: Color(0xff887b70),
+                    ),
+                  ),
+                  Spacer(),
+                  IconButton(onPressed: () => {}, icon: Icon(Icons.more_horiz)),
+                ],
+              ),
+              SizedBox(
+                height: 42,
+                width: double.infinity,
+                child: WaveformWidget(
+                  color: const Color.fromARGB(255, 194, 59, 14),
+                  samples: segmentSamples,
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: noteController,
+                minLines: 1,
+                maxLines: 2,
+                textCapitalization: TextCapitalization.sentences,
+                decoration: const InputDecoration(
+                  hintText: 'Add a note for this segment',
+                  isDense: true,
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
