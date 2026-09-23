@@ -1,0 +1,293 @@
+import 'dart:convert';
+import 'dart:io';
+
+import 'package:audionotebook/model/voice_segment.dart';
+import 'package:audionotebook/services/audio_service.dart';
+import 'package:audionotebook/ui/audio_page_state.dart';
+import 'package:audionotebook/utils/vad.dart';
+import 'package:flutter/material.dart';
+import 'package:just_waveform/just_waveform.dart';
+import 'package:logger/logger.dart';
+import 'package:path_provider/path_provider.dart';
+import 'package:path/path.dart' as path;
+import 'package:wav/wav_file.dart';
+import 'package:whisper_ggml/whisper_ggml.dart';
+
+Logger logger = Logger();
+
+class AudioPageManager extends ValueNotifier<AudioPageState> {
+  final AudioService _audioService = AudioService();
+  final playbackPosition = ValueNotifier(Duration.zero);
+  final asrController = WhisperController();
+
+  AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
+    _audioService.positionStream.listen((pos) {
+      playbackPosition.value = pos;
+    });
+    _audioService.stateStream.listen((s) {
+      value = value.copyWith(isPlaying: s.playing);
+    });
+  }
+
+  Future<void> loadAudio(String filepath) async {
+    try {
+      final duration = await _audioService.load(filepath);
+      value = value.copyWith(
+        audioPath: filepath,
+        audioDuration: duration,
+        fragments: const [],
+      );
+      await _restoreSegments(filepath);
+      _generateWaveform(filepath);
+    } catch (error) {
+      // if (mounted) setState(() => _error = error);
+    }
+  }
+
+  Future<void> _generateWaveform(String audioPath) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      if (!await tempDir.exists()) await tempDir.create(recursive: true);
+
+      final stat = await File(audioPath).stat();
+      final fileHash = '${stat.size}_${stat.modified.millisecondsSinceEpoch}';
+
+      final waveFile = File(
+        path.join(tempDir.path, '${path.basename(audioPath)}_$fileHash.wave'),
+      );
+
+      JustWaveform.extract(
+        audioInFile: File(audioPath),
+        waveOutFile: waveFile,
+      ).listen((event) {
+        if (event.waveform != null) {
+          value = value.copyWith(waveform: event.waveform);
+        }
+      });
+    } catch (e) {
+      debugPrint("Waveform error: $e");
+    }
+  }
+
+  Future<void> detectSegments() async {
+    value = value.copyWith(isSegmenting: true);
+    try {
+      final audioPath = value.audioPath;
+      if (audioPath == null) return;
+
+      final bytes = await File(audioPath).readAsBytes();
+      final wav = Wav.read(bytes);
+      sampleRate = wav.samplesPerSecond;
+      final audioData = wav.channels[0];
+      final detected = await detectVoiceSegments(audioData, sampleRate);
+      final durationSeconds = value.audioDuration.inMilliseconds / 1000.0;
+
+      // VAD returns normalized positions; the waveform painter uses seconds.
+      final segments = [
+        for (var index = 0; index < detected.length; index++)
+          Segment(
+            index: index,
+            start: detected[index].start * durationSeconds,
+            end: detected[index].end * durationSeconds,
+            text: detected[index].text,
+          ),
+      ];
+      value = value.copyWith(fragments: segments);
+      await _saveSegments(audioPath, segments);
+    } finally {
+      value = value.copyWith(isSegmenting: false);
+    }
+  }
+
+  Future<File> _segmentsCacheFile() async {
+    final directory = await getApplicationSupportDirectory();
+    await directory.create(recursive: true);
+    return File(path.join(directory.path, 'segments.json'));
+  }
+
+  Future<void> _restoreSegments(String audioPath) async {
+    try {
+      final cacheFile = await _segmentsCacheFile();
+      if (!await cacheFile.exists()) return;
+
+      final cache = jsonDecode(await cacheFile.readAsString());
+      final stored = cache[audioPath];
+      if (stored is! List) return;
+
+      final segments = stored
+          .whereType<Map>()
+          .map(
+            (item) => Segment(
+              index: item['index'] as int,
+              start: (item['start'] as num).toDouble(),
+              end: (item['end'] as num).toDouble(),
+              text: item['text'] as String? ?? '',
+            ),
+          )
+          .toList();
+      value = value.copyWith(fragments: segments);
+    } catch (error) {
+      logger.w('Could not restore saved segments: $error');
+    }
+  }
+
+  Future<void> _saveSegments(String audioPath, List<Segment> segments) async {
+    try {
+      final cacheFile = await _segmentsCacheFile();
+      final cache = <String, dynamic>{};
+      if (await cacheFile.exists()) {
+        final existing = jsonDecode(await cacheFile.readAsString());
+        if (existing is Map) {
+          cache.addAll(Map<String, dynamic>.from(existing));
+        }
+      }
+      cache[audioPath] = [
+        for (final segment in segments)
+          {
+            'index': segment.index,
+            'start': segment.start,
+            'end': segment.end,
+            'text': segment.text,
+          },
+      ];
+      await cacheFile.writeAsString(jsonEncode(cache));
+    } catch (error) {
+      logger.w('Could not save segments: $error');
+    }
+  }
+
+  Future<void> transcribe() async {
+    value = value.copyWith(isTranscribing: true);
+    logger.i('transcribe');
+    if (value.audioPath != null) {
+      final result = await asrController.transcribe(
+        model: WhisperModel.tiny,
+        audioPath: value.audioPath!,
+        lang: 'en',
+      );
+      print(result?.transcription.text);
+    }
+    value = value.copyWith(isTranscribing: false);
+  }
+
+  void selectFragment(int? index) {
+    value = value.copyWith(selectedFragmentIndex: index);
+  }
+
+  void enterFocusMode(int index) {
+    if (value.audioDuration.inMilliseconds == 0) return;
+
+    final totalSeconds = value.audioDuration.inMilliseconds / 1000.0;
+    final targetZoom = (totalSeconds / 10.0).clamp(1.0, 500.0);
+
+    final startSeconds = value.fragments[index].start;
+
+    seekTo(Duration(milliseconds: (startSeconds * 1000).ceil()));
+
+    value = value.copyWith(zoomLevel: targetZoom, focusedFragmentIndex: index);
+  }
+
+  void exitFocusMode() {
+    value = value.copyWith(clearFocus: true);
+  }
+
+  void setZoom(double z) {
+    final clampedZoom = z.clamp(1.0, 500.0);
+    value = value.copyWith(zoomLevel: clampedZoom);
+    // _settings.setLastZoom(clampedZoom);
+  }
+
+  void setHoveredFragmentIndex(int? hoveredIdx) {}
+
+  void seekTo(Duration d) => _audioService.seek(d);
+
+  Future<void> togglePlayback() async {
+    if (value.isPlaying) {
+      await _audioService.pause();
+    } else {
+      await _audioService.play();
+    }
+  }
+
+  void toggleFragmentPin(int index) {}
+
+  void clearFragmentTiming(int index) {
+    if (value.isReadOnly) return;
+    final frags = List<Segment>.from(value.fragments);
+    final duration = value.audioDuration.inMilliseconds / 1000.0;
+
+    Segment? prevTimed;
+    for (int i = index - 1; i >= 0; i--) {
+      if (frags[i].start >= 0) {
+        prevTimed = frags[i];
+        break;
+      }
+    }
+    Segment? nextTimed;
+    for (int i = index + 1; i < frags.length; i++) {
+      if (frags[i].start >= 0) {
+        nextTimed = frags[i];
+        break;
+      }
+    }
+
+    if (prevTimed != null) {
+      double newEnd = nextTimed != null ? nextTimed.start : duration;
+      prevTimed.setTiming(start: prevTimed.start, end: newEnd);
+    }
+
+    frags[index].setTiming(start: -1.0, end: -1.0);
+    // frags[index].clearPinnedTiming();
+
+    value = value.copyWith(fragments: frags, hasUnsavedChanges: true);
+  }
+
+  void updateFragment(int index, double newStart, double newEnd) {
+    if (value.isReadOnly) return;
+    final frags = List<Segment>.from(value.fragments);
+    final duration = value.audioDuration.inMilliseconds / 1000.0;
+
+    double s = newStart.clamp(0.0, duration);
+    double e = newEnd.clamp(0.0, duration);
+
+    if (e <= s + 0.01) {
+      if (s != frags[index].start) {
+        s = e - 0.01;
+      } else {
+        e = s + 0.01;
+      }
+    }
+
+    frags[index].setTiming(start: s, end: e);
+
+    Segment? prevTimed;
+    for (int i = index - 1; i >= 0; i--) {
+      if (frags[i].start >= 0) {
+        prevTimed = frags[i];
+        break;
+      }
+    }
+    if (prevTimed != null) {
+      double prevStart = prevTimed.start;
+      if (prevStart > s) prevStart = s;
+      prevTimed.setTiming(start: prevStart, end: s);
+    }
+
+    Segment? nextTimed;
+    for (int i = index + 1; i < frags.length; i++) {
+      if (frags[i].start >= 0) {
+        nextTimed = frags[i];
+        break;
+      }
+    }
+    if (nextTimed != null) {
+      double nextEnd = nextTimed.end;
+      if (nextEnd < e) nextEnd = e;
+      nextTimed.setTiming(start: e, end: nextEnd);
+    }
+
+    value = value.copyWith(fragments: frags, hasUnsavedChanges: true);
+  }
+
+  void captureFragmentTiming(BuildContext context, int i) {}
+}

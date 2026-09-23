@@ -1,7 +1,8 @@
 import 'dart:io';
 
-import 'package:audionotebook/ui/audio_detail_page.dart';
+import 'package:audionotebook/ui/audio_page.dart';
 import 'package:audionotebook/model/audio_item.dart';
+import 'package:audionotebook/ui/audio_page_manager.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';
@@ -199,7 +200,10 @@ class _AudioListItem extends StatelessWidget {
       child: InkWell(
         borderRadius: BorderRadius.circular(16),
         onTap: () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => AudioDetailPage(entry: entry)),
+          MaterialPageRoute(
+            builder: (_) =>
+                AudioDetailPage(entry: entry, pageManager: AudioPageManager()),
+          ),
         ),
         child: Padding(
           padding: const EdgeInsets.all(16),

@@ -1,2 +1,4 @@
-const double marginShort = 8;
-const double marginLarge = 16;
+class Dimens {
+  static double marginShort = 8;
+  static double marginLarge = 16;
+}

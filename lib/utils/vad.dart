@@ -12,16 +12,18 @@ import 'package:audionotebook/model/voice_segment.dart';
 ///
 ///
 final int frameShift = 20; // milliseconds
-final double energyThreshold = 0.05;
-final double preEmphasis = 0.95;
+final double energyThreshold = 0.001;
+final double preEmphasis = 0.90;
+const int _silenceGapToleranceMs = 250;
+const int _targetSegmentDurationMs = 6000;
 int sampleRate = 16000;
 int frameLength = 25;
 
-Future<List<VoiceSegment>> detectVoiceSegments(
+Future<List<Segment>> detectVoiceSegments(
   List<double> waveform,
   int sampleR,
 ) async {
-  if (waveform.isEmpty || sampleR <= 0) return <VoiceSegment>[];
+  if (waveform.isEmpty || sampleR <= 0) return <Segment>[];
 
   sampleRate = sampleR;
   final decisions = detect(waveform);
@@ -81,54 +83,83 @@ List<int> computeVad(List<double> energy) {
   return energy.map((e) => e > energyThreshold ? 1 : 0).toList();
 }
 
-List<VoiceSegment> _decisionsToSegments(List<int> decisions, int sampleCount) {
-  if (decisions.isEmpty || sampleCount == 0) return <VoiceSegment>[];
+List<Segment> _decisionsToSegments(List<int> decisions, int sampleCount) {
+  if (decisions.isEmpty || sampleCount == 0) return <Segment>[];
 
   final frameShiftSamples = frameShift * sampleRate ~/ 1000;
   final frameLengthSamples = frameLength * sampleRate ~/ 1000;
-  final segments = <VoiceSegment>[];
+  final gapToleranceFrames =
+      (_silenceGapToleranceMs + frameShift - 1) ~/ frameShift;
+  final smoothedDecisions = _fillShortGaps(decisions, gapToleranceFrames);
+  final segments = <Segment>[];
   var startSample = -1;
 
-  for (var frame = 0; frame <= decisions.length; frame++) {
-    final voiced = frame < decisions.length && decisions[frame] == 1;
+  for (var frame = 0; frame <= smoothedDecisions.length; frame++) {
+    final voiced =
+        frame < smoothedDecisions.length && smoothedDecisions[frame] == 1;
     if (voiced && startSample == -1) {
       startSample = frame * frameShiftSamples;
     } else if (!voiced && startSample != -1) {
       final endSample = ((frame - 1) * frameShiftSamples + frameLengthSamples)
           .clamp(startSample, sampleCount);
-      segments.add(
-        VoiceSegment(
-          start: (startSample / sampleCount).clamp(0.0, 1.0),
-          end: (endSample / sampleCount).clamp(0.0, 1.0),
-        ),
+      segments.addAll(
+        _splitIntoTargetSegments(startSample, endSample, sampleCount),
       );
       startSample = -1;
     }
   }
 
-  return _mergeNearbySegments(segments, sampleCount);
+  return segments;
 }
 
-List<VoiceSegment> _mergeNearbySegments(
-  List<VoiceSegment> segments,
-  int sampleCount,
-) {
-  if (segments.length < 2) return segments;
+List<int> _fillShortGaps(List<int> decisions, int gapToleranceFrames) {
+  final smoothed = List<int>.from(decisions);
+  var frame = 0;
+  while (frame < smoothed.length) {
+    if (smoothed[frame] == 1) {
+      frame++;
+      continue;
+    }
 
-  final merged = <VoiceSegment>[segments.first];
-  final maxGap = (frameShift * sampleRate / 1000) / sampleCount;
-  for (final segment in segments.skip(1)) {
-    final previous = merged.last;
-    if (segment.start - previous.end <= maxGap) {
-      merged[merged.length - 1] = VoiceSegment(
-        start: previous.start,
-        end: segment.end,
-      );
-    } else {
-      merged.add(segment);
+    final gapStart = frame;
+    while (frame < smoothed.length && smoothed[frame] == 0) {
+      frame++;
+    }
+    final gapEnd = frame;
+    final gapIsInternal = gapStart > 0 && gapEnd < smoothed.length;
+    if (gapIsInternal && gapEnd - gapStart <= gapToleranceFrames) {
+      for (var index = gapStart; index < gapEnd; index++) {
+        smoothed[index] = 1;
+      }
     }
   }
-  return merged;
+  return smoothed;
+}
+
+List<Segment> _splitIntoTargetSegments(
+  int startSample,
+  int endSample,
+  int sampleCount,
+) {
+  final targetSamples = _targetSegmentDurationMs * sampleRate ~/ 1000;
+  final duration = endSample - startSample;
+  final segmentCount = (duration + targetSamples - 1) ~/ targetSamples;
+  final segmentLength = (duration / segmentCount).round();
+  final segments = <Segment>[];
+
+  for (var index = 0; index < segmentCount; index++) {
+    final segmentStart = startSample + index * segmentLength;
+    final segmentEnd = index == segmentCount - 1
+        ? endSample
+        : startSample + (index + 1) * segmentLength;
+    segments.add(
+      Segment(
+        start: (segmentStart / sampleCount).clamp(0.0, 1.0),
+        end: (segmentEnd / sampleCount).clamp(0.0, 1.0), index: index,
+      ),
+    );
+  }
+  return segments;
 }
 
 /// Returns [waveform] with only the voiced frames kept, concatenated.
