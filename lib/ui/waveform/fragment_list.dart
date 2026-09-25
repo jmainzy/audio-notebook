@@ -89,7 +89,7 @@ class _StudioFragmentListState extends State<FragmentList> {
   Widget build(BuildContext context) {
     if (widget.fragments.isEmpty) {
       return Center(
-        child: Text("Click \'Detect Segments\' to show audio segments"),
+        child: Text("Click 'Detect Segments' to show audio segments"),
       );
     }
 

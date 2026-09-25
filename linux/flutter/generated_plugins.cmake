@@ -3,11 +3,13 @@
 #
 
 list(APPEND FLUTTER_PLUGIN_LIST
+  ffmpeg_kit_flutter_new
+  flutter_audio_toolkit
 )
 
 list(APPEND FLUTTER_FFI_PLUGIN_LIST
   jni
-  whisper_ggml
+  sherpa_onnx_linux
 )
 
 set(PLUGIN_BUNDLED_LIBRARIES)

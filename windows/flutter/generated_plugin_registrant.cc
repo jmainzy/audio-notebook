@@ -6,6 +6,12 @@
 
 #include "generated_plugin_registrant.h"
 
+#include <ffmpeg_kit_flutter_new/f_fmpeg_kit_flutter_plugin.h>
+#include <flutter_audio_toolkit/flutter_audio_toolkit_plugin_c_api.h>
 
 void RegisterPlugins(flutter::PluginRegistry* registry) {
+  FFmpegKitFlutterPluginRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FFmpegKitFlutterPlugin"));
+  FlutterAudioToolkitPluginCApiRegisterWithRegistrar(
+      registry->GetRegistrarForPlugin("FlutterAudioToolkitPluginCApi"));
 }

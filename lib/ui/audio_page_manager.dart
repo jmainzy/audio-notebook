@@ -1,24 +1,30 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
 import 'package:audionotebook/ui/audio_page_state.dart';
 import 'package:audionotebook/utils/vad.dart';
+import 'package:audionotebook/vad/model.dart' as model;
+import 'package:audionotebook/vad/vad_asr_manager.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:ffmpeg_kit_flutter_new/return_code.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_audio_toolkit/flutter_audio_toolkit.dart';
 import 'package:just_waveform/just_waveform.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:wav/wav_file.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
 
 Logger logger = Logger();
 
 class AudioPageManager extends ValueNotifier<AudioPageState> {
   final AudioService _audioService = AudioService();
   final playbackPosition = ValueNotifier(Duration.zero);
-  final asrController = WhisperController();
+  final audioToolkit = FlutterAudioToolkit();
+  late final VadAsrManager _asrManager;
 
   AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
     _audioService.positionStream.listen((pos) {
@@ -28,6 +34,13 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       value = value.copyWith(isPlaying: s.playing);
     });
   }
+
+  // Future<sherpa_onnx.OfflineRecognizer> createOfflineRecognizer() async {
+  //   final type = 2;
+  //   final modelConfig = await getOfflineModelConfig(type: type);
+  //   final config = sherpa_onnx.OfflineRecognizerConfig(model: modelConfig);
+  //   return sherpa_onnx.OfflineRecognizer(config);
+  // }
 
   Future<void> loadAudio(String filepath) async {
     try {
@@ -39,6 +52,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       );
       await _restoreSegments(filepath);
       _generateWaveform(filepath);
+      // _asrService = await createOfflineRecognizer();
+      _asrManager = VadAsrManager();
     } catch (error) {
       // if (mounted) setState(() => _error = error);
     }
@@ -156,18 +171,65 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
     }
   }
 
+  Future<bool> _initAsrIfNeeded() async {
+    if (_asrManager.state != VadAsrState.uninitialized) return true;
+    try {
+      // Copy model assets to disk and get resolved paths.
+      await model.prepareModelConfig();
+      final dirs = await model.prepareModelDirs();
+      await _asrManager.init(
+        modelDir: dirs.asrModelDir,
+        vadModelDir: dirs.baseDir,
+      );
+      return true;
+    } catch (e) {
+      logger.e("error initializing ASR: $e");
+      return false;
+    }
+  }
+
   Future<void> transcribe() async {
     value = value.copyWith(isTranscribing: true);
     logger.i('transcribe');
-    if (value.audioPath != null) {
-      final result = await asrController.transcribe(
-        model: WhisperModel.tiny,
-        audioPath: value.audioPath!,
-        lang: 'en',
-      );
-      print(result?.transcription.text);
+    // _asrService ??= await createOfflineRecognizer();
+    final filename = value.audioPath!;
+
+    final decoded = await decodeAudioFile(filename);
+    if (decoded == null) {
+      logger.e("Error decoding file");
+      return;
     }
+
+    _initAsrIfNeeded();
+
+    _asrManager.runVad(
+      samples: decoded.samples,
+      sampleRate: decoded.sampleRate,
+      threshold: 0.02,
+      minSilenceDuration: 1,
+      minSpeechDuration: 0.2,
+      maxSpeechDuration: 7,
+    );
+
     value = value.copyWith(isTranscribing: false);
+  }
+
+  Future<String> writeTempWav(String filename) async {
+    const targetRate = 16000;
+
+    final directory = await getTemporaryDirectory();
+    final outputPath = path.join(
+      directory.path,
+      '${path.basenameWithoutExtension(filename)}_16khz.wav',
+    );
+    audioToolkit.convertAudio(
+      inputPath: filename,
+      outputPath: outputPath,
+      format: AudioFormat.copy,
+      sampleRate: targetRate,
+    );
+
+    return outputPath;
   }
 
   void selectFragment(int? index) {
@@ -290,4 +352,97 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   }
 
   void captureFragmentTiming(BuildContext context, int i) {}
+
+  /// Decode audio bytes to 16kHz mono Float32 PCM samples using FFmpeg.
+  /// Returns null if decoding fails.
+  Future<DecodedAudio?> decodeAudioBytes(Uint8List bytes) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      await tempDir.create(recursive: true);
+      final inputPath =
+          '${tempDir.path}/vad_input_${DateTime.now().microsecondsSinceEpoch}';
+      final file = File(inputPath);
+      await file.writeAsBytes(bytes);
+      final result = await _decodePath(inputPath);
+      try {
+        await file.delete();
+      } catch (_) {}
+      return result;
+    } catch (e) {
+      print('Audio decode error: $e');
+      return null;
+    }
+  }
+
+  /// Decode an audio file to 16kHz mono Float32 PCM samples using FFmpeg.
+  /// Returns null if decoding fails.
+  Future<DecodedAudio?> decodeAudioFile(String filePath) async {
+    return _decodePath(filePath);
+  }
+
+  Future<DecodedAudio?> _decodePath(String filePath) async {
+    try {
+      final tempDir = await getTemporaryDirectory();
+      await tempDir.create(recursive: true);
+      final outputPath =
+          '${tempDir.path}/decoded_${DateTime.now().microsecondsSinceEpoch}.raw';
+
+      // Use FFmpeg to convert any audio/video to 16kHz mono Float32 PCM.
+      final command =
+          '-i "$filePath" -ar 16000 -ac 1 -f f32le -acodec pcm_f32le -y "$outputPath"';
+
+      final session = await FFmpegKit.execute(command);
+      final returnCode = await session.getReturnCode();
+
+      if (!ReturnCode.isSuccess(returnCode)) {
+        final logs = await session.getOutput();
+        print('FFmpeg error: $logs');
+        return null;
+      }
+
+      final outFile = File(outputPath);
+      if (!await outFile.exists()) {
+        print('FFmpeg output file not found: $outputPath');
+        return null;
+      }
+
+      final bytes = await outFile.readAsBytes();
+      await outFile.delete();
+
+      if (bytes.length < 4) return null;
+
+      final numSamples = bytes.length ~/ 4;
+      final samples = Float32List(numSamples);
+      final bd = bytes.buffer.asByteData(
+        bytes.offsetInBytes,
+        bytes.lengthInBytes,
+      );
+      for (int i = 0; i < numSamples; i++) {
+        samples[i] = bd.getFloat32(i * 4, Endian.little);
+      }
+
+      final duration = numSamples / 16000.0;
+
+      return DecodedAudio(
+        samples: samples,
+        sampleRate: 16000,
+        duration: duration,
+      );
+    } catch (e) {
+      print('Audio decode error: $e');
+      return null;
+    }
+  }
+}
+
+/// Result of decoding an audio file.
+class DecodedAudio {
+  final Float32List samples;
+  final int sampleRate;
+  final double duration;
+  const DecodedAudio({
+    required this.samples,
+    required this.sampleRate,
+    required this.duration,
+  });
 }
