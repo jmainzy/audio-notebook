@@ -14,6 +14,7 @@ class FragmentList extends StatefulWidget {
   final Function(int) onDoubleTap;
   final Function(int) onCapture;
   final Function(int) onClear;
+  final void Function(int, String) onTextChanged;
 
   const FragmentList({
     super.key,
@@ -26,6 +27,7 @@ class FragmentList extends StatefulWidget {
     required this.onDoubleTap,
     required this.onCapture,
     required this.onClear,
+    required this.onTextChanged,
   });
 
   @override
@@ -122,6 +124,7 @@ class _StudioFragmentListState extends State<FragmentList> {
               },
               onDoubleTap: hasTime ? () => widget.onDoubleTap(i) : null,
               onClear: hasTime ? () => widget.onClear(i) : null,
+              onTextChanged: (text) => widget.onTextChanged(i, text),
             );
           },
           separatorBuilder: (BuildContext context, int index) {
@@ -133,13 +136,14 @@ class _StudioFragmentListState extends State<FragmentList> {
   }
 }
 
-class SegmentCard extends StatelessWidget {
+class SegmentCard extends StatefulWidget {
   const SegmentCard({
     super.key,
     required this.segment,
     required this.isPlaying,
     required this.isSelected,
     required this.onTap,
+    required this.onTextChanged,
     this.onDoubleTap,
     this.onClear,
   });
@@ -148,19 +152,71 @@ class SegmentCard extends StatelessWidget {
   final bool isPlaying;
   final bool isSelected;
   final VoidCallback onTap;
+  final ValueChanged<String> onTextChanged;
   final VoidCallback? onDoubleTap;
   final VoidCallback? onClear;
 
   @override
+  State<SegmentCard> createState() => _SegmentCardState();
+}
+
+class _SegmentCardState extends State<SegmentCard> {
+  late final TextEditingController _textController;
+  late final FocusNode _textFocusNode;
+  bool _isEditingText = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _textController = TextEditingController(text: widget.segment.text);
+    _textFocusNode = FocusNode()..addListener(_handleTextFocusChange);
+  }
+
+  @override
+  void didUpdateWidget(covariant SegmentCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!_isEditingText && oldWidget.segment.text != widget.segment.text) {
+      _textController.text = widget.segment.text;
+    }
+  }
+
+  @override
+  void dispose() {
+    _textFocusNode
+      ..removeListener(_handleTextFocusChange)
+      ..dispose();
+    _textController.dispose();
+    super.dispose();
+  }
+
+  void _startEditingText() {
+    setState(() => _isEditingText = true);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted && _isEditingText) _textFocusNode.requestFocus();
+    });
+  }
+
+  void _handleTextFocusChange() {
+    if (!_textFocusNode.hasFocus) _finishEditingText();
+  }
+
+  void _finishEditingText() {
+    if (!_isEditingText) return;
+    final text = _textController.text;
+    setState(() => _isEditingText = false);
+    widget.onTextChanged(text);
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Material(
-      color: isSelected
+      color: widget.isSelected
           ? Colors.amber.withValues(alpha: 0.22)
           : Colors.white.withValues(alpha: 0.82),
       borderRadius: BorderRadius.circular(10),
       child: InkWell(
-        onTap: onTap,
-        onDoubleTap: onDoubleTap,
+        onTap: widget.onTap,
+        onDoubleTap: widget.onDoubleTap,
         borderRadius: BorderRadius.circular(10),
         focusColor: Colors.white10,
         child: Padding(
@@ -172,7 +228,7 @@ class SegmentCard extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '${formatDuration(Duration(milliseconds: (segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (segment.end * 1000).round()))}',
+                      '${formatDuration(Duration(milliseconds: (widget.segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (widget.segment.end * 1000).round()))}',
                       style: const TextStyle(
                         fontFamily: 'Arial',
                         fontSize: 12,
@@ -180,14 +236,36 @@ class SegmentCard extends StatelessWidget {
                       ),
                     ),
                     SizedBox(height: Dimens.marginShort),
-                    Text(
-                      segment.text.isEmpty
-                          ? 'Transcription here'
-                          : segment.text,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontSize: 13),
-                    ),
+                    if (_isEditingText)
+                      TextField(
+                        controller: _textController,
+                        focusNode: _textFocusNode,
+                        minLines: 1,
+                        maxLines: 3,
+                        textCapitalization: TextCapitalization.sentences,
+                        decoration: const InputDecoration(
+                          hintText: 'Transcription here',
+                          isDense: true,
+                          border: OutlineInputBorder(),
+                        ),
+                        onTapOutside: (_) => _textFocusNode.unfocus(),
+                        onSubmitted: (_) => _textFocusNode.unfocus(),
+                      )
+                    else
+                      InkWell(
+                        onTap: _startEditingText,
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: Text(
+                            widget.segment.text.isEmpty
+                                ? 'Transcription here'
+                                : widget.segment.text,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(fontSize: 13),
+                          ),
+                        ),
+                      ),
                     SizedBox(height: Dimens.marginShort),
                     TextField(
                       minLines: 1,

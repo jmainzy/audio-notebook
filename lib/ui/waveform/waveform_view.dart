@@ -196,7 +196,7 @@ class _WaveformViewState extends State<WaveformView> {
 
         // --- HELPER: Handles horizontal panning ---
         void applyPan(double panDelta) {
-          if (panDelta == 0) return;
+          if (panDelta == 0 || !widget.scrollController.hasClients) return;
           final currentOffset = widget.scrollController.offset;
           widget.scrollController.jumpTo(
             (currentOffset + panDelta).clamp(
@@ -300,11 +300,15 @@ class _WaveformViewState extends State<WaveformView> {
                   },
                   onHorizontalDragUpdate: (d) {
                     if (_isPanZooming) return;
-                    _handleDragUpdate(
-                      d.localPosition.dx,
-                      contentWidth,
-                      totalSec,
-                    );
+                    if (_dragIndex == null) {
+                      applyPan(-d.delta.dx);
+                    } else {
+                      _handleDragUpdate(
+                        d.localPosition.dx,
+                        contentWidth,
+                        totalSec,
+                      );
+                    }
                   },
                   onHorizontalDragEnd: (_) {
                     if (_isPanZooming) return;

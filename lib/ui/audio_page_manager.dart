@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -287,6 +288,25 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
     }
 
     value = value.copyWith(fragments: frags, hasUnsavedChanges: true);
+  }
+
+  void updateFragmentText(int index, String text) {
+    if (value.isReadOnly || index < 0 || index >= value.fragments.length) {
+      return;
+    }
+
+    final fragments = List<Segment>.from(value.fragments);
+    final fragment = fragments[index];
+    fragments[index] = Segment(
+      index: fragment.index,
+      start: fragment.start,
+      end: fragment.end,
+      text: text,
+    );
+    value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
+
+    final audioPath = value.audioPath;
+    if (audioPath != null) unawaited(_saveSegments(audioPath, fragments));
   }
 
   void captureFragmentTiming(BuildContext context, int i) {}

@@ -173,6 +173,7 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           playbackNotifier: widget.pageManager.playbackPosition,
                           selectedIndex: state.selectedFragmentIndex,
                           onSelect: widget.pageManager.selectFragment,
+                          onTextChanged: widget.pageManager.updateFragmentText,
                           onCapture: (i) => widget.pageManager
                               .captureFragmentTiming(context, i),
                           onClear: widget.pageManager.clearFragmentTiming,
