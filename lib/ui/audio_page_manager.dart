@@ -1,24 +1,29 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
 import 'package:audionotebook/ui/audio_page_state.dart';
 import 'package:audionotebook/utils/vad.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_waveform/just_waveform.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
 import 'package:wav/wav_file.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
 
 Logger logger = Logger();
+
+const _modelAssetDirectory = 'assets/sherpa-model';
+const _modelDirectory = 'sherpa-model';
 
 class AudioPageManager extends ValueNotifier<AudioPageState> {
   final AudioService _audioService = AudioService();
   final playbackPosition = ValueNotifier(Duration.zero);
-  final asrController = WhisperController();
 
   AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
     _audioService.positionStream.listen((pos) {
@@ -157,17 +162,110 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   }
 
   Future<void> transcribe() async {
+    final audioPath = value.audioPath;
+    if (audioPath == null || value.isTranscribing) return;
+
     value = value.copyWith(isTranscribing: true);
-    logger.i('transcribe');
-    if (value.audioPath != null) {
-      final result = await asrController.transcribe(
-        model: WhisperModel.tiny,
-        audioPath: value.audioPath!,
-        lang: 'en',
+    try {
+      final wav = Wav.read(await File(audioPath).readAsBytes());
+      if (wav.channels.isEmpty || wav.channels.first.isEmpty) {
+        throw const FormatException('The audio file contains no samples.');
+      }
+
+      final samples = Float32List(wav.channels.first.length);
+      for (var sampleIndex = 0; sampleIndex < samples.length; sampleIndex++) {
+        var mixedSample = 0.0;
+        for (final channel in wav.channels) {
+          mixedSample += channel[sampleIndex];
+        }
+        samples[sampleIndex] = mixedSample / wav.channels.length;
+      }
+
+      final modelPaths = await _prepareSherpaModel();
+      final sampleRate = wav.samplesPerSecond;
+      final transcription = await Isolate.run(
+        () => _transcribeWithSherpa(samples, sampleRate, modelPaths),
+        debugName: 'Sherpa ASR',
       );
-      print(result?.transcription.text);
+      final text = transcription.trim();
+      final segments = text.isEmpty
+          ? <Segment>[]
+          : [
+              Segment(
+                index: 0,
+                start: 0,
+                end: samples.length / sampleRate,
+                text: text,
+              ),
+            ];
+      value = value.copyWith(fragments: segments);
+      await _saveSegments(audioPath, segments);
+    } catch (error, stackTrace) {
+      logger.e(
+        'Sherpa transcription failed',
+        error: error,
+        stackTrace: stackTrace,
+      );
+    } finally {
+      value = value.copyWith(isTranscribing: false);
     }
-    value = value.copyWith(isTranscribing: false);
+  }
+
+  Future<String> _prepareSherpaModel() async {
+    final supportDirectory = await getApplicationSupportDirectory();
+    final modelDirectory = Directory(
+      path.join(supportDirectory.path, _modelDirectory),
+    );
+    await modelDirectory.create(recursive: true);
+
+    for (final filename in [
+      'tiny.en-encoder.int8.onnx',
+      'tiny.en-decoder.int8.onnx',
+      'tiny.en-tokens.txt',
+    ]) {
+      final modelFile = File(path.join(modelDirectory.path, filename));
+      if (await modelFile.exists()) continue;
+
+      final asset = await rootBundle.load('$_modelAssetDirectory/$filename');
+      await modelFile.writeAsBytes(
+        asset.buffer.asUint8List(asset.offsetInBytes, asset.lengthInBytes),
+        flush: true,
+      );
+    }
+
+    return modelDirectory.path;
+  }
+
+  String _transcribeWithSherpa(
+    Float32List samples,
+    int sampleRate,
+    String modelDirectory,
+  ) {
+    sherpa_onnx.initBindings();
+    final recognizer = sherpa_onnx.OfflineRecognizer(
+      sherpa_onnx.OfflineRecognizerConfig(
+        model: sherpa_onnx.OfflineModelConfig(
+          whisper: sherpa_onnx.OfflineWhisperModelConfig(
+            encoder: path.join(modelDirectory, 'tiny.en-encoder.int8.onnx'),
+            decoder: path.join(modelDirectory, 'tiny.en-decoder.int8.onnx'),
+            language: 'en',
+            task: 'transcribe',
+          ),
+          tokens: path.join(modelDirectory, 'tiny.en-tokens.txt'),
+          numThreads: 2,
+          debug: false,
+        ),
+      ),
+    );
+    final stream = recognizer.createStream();
+    try {
+      stream.acceptWaveform(samples: samples, sampleRate: sampleRate);
+      recognizer.decode(stream);
+      return recognizer.getResult(stream).text;
+    } finally {
+      stream.free();
+      recognizer.free();
+    }
   }
 
   void selectFragment(int? index) {

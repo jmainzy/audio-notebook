@@ -38,9 +38,9 @@ dependencies:
   just_waveform: ^0.0.7
   logger: ^2.8.0
   wav: ^1.5.0
-  whisper_ggml: ^2.6.0
   path_provider: ^2.1.6
   path: ^1.9.1
+  sherpa_onnx: ^1.13.8
 
 dev_dependencies:
   flutter_test:
@@ -62,6 +62,10 @@ flutter:
   # included with your application, so that you can use the icons in
   # the material Icons class.
   uses-material-design: true
+
+  assets:
+    - assets/
+    - assets/sherpa-model/
 
   # To add assets to your application, add an assets section, like this:
   # assets:
