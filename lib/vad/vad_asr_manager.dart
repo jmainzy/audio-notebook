@@ -70,6 +70,7 @@ class VadAsrManager {
     if (_state != VadAsrState.uninitialized) return;
     _state = VadAsrState.initializing;
     _logController.add('Initializing VAD + ASR...');
+    logger.i("Initializing VAD + ASR...");
 
     try {
       _receivePort = ReceivePort();
@@ -90,6 +91,7 @@ class VadAsrManager {
         debug: baseVadConfig.debug,
       );
 
+      logger.i("spawning");
       // Spawn single isolate for both VAD and ASR.
       _isolate = await Isolate.spawn(
         _workerEntry,
@@ -108,6 +110,7 @@ class VadAsrManager {
         if (!initDone) {
           initDone = true;
           if (message is _IsolateReady && message.isSuccess) {
+            logger.i("sending");
             _sendPort = message.sendPort!;
             readyCompleter.complete();
           } else if (message is _IsolateReady) {
@@ -118,6 +121,7 @@ class VadAsrManager {
             readyCompleter.completeError(
               Exception('Unexpected first message: $message'),
             );
+            logger.e("Error spawning process: $message");
           }
         } else {
           _onWorkerMessage(message);
@@ -270,6 +274,8 @@ void _workerEntry(_InitRequest initReq) {
 
     // Create ASR recognizer once.
     final asrConfig = cfg.buildAsrConfig(modelDir: initReq.asrModelDir);
+    logger.i("asr model: ${asrConfig.model}");
+    logger.i("asr lm: ${asrConfig.lm}");
     final recognizer = sherpa_onnx.OfflineRecognizer(asrConfig);
 
     final receivePort = ReceivePort();
@@ -277,11 +283,13 @@ void _workerEntry(_InitRequest initReq) {
 
     sherpa_onnx.VoiceActivityDetector? vad;
     final watch = Stopwatch();
+    logger.i("asr recognizer created");
 
     receivePort.listen((message) {
       if (message is _RunRequest) {
         // Recreate VAD with user parameters.
         vad?.free();
+        logger.i("running VAD");
         final baseCfg = initReq.vadConfig;
         vad = sherpa_onnx.VoiceActivityDetector(
           config: sherpa_onnx.VadModelConfig(
@@ -315,6 +323,7 @@ void _workerEntry(_InitRequest initReq) {
 
             // Decode this segment immediately.
             final stream = recognizer.createStream();
+            logger.d("processing segment $startSec - $endSec");
             stream.acceptWaveform(
               samples: segSamples,
               sampleRate: message.sampleRate,
@@ -355,6 +364,7 @@ void _workerEntry(_InitRequest initReq) {
       }
     });
   } catch (e) {
+    logger.e("error in vad/asr: $e");
     initReq.mainSendPort.send(_IsolateReady.error('$e'));
   }
 }

@@ -38,6 +38,7 @@ dependencies:
   path_provider: ^2.1.6
   path: ^1.9.1
   sherpa_onnx: ^1.13.8
+  sherpa_onnx_macos: ^1.13.8
 
   # audio
   wav: ^1.5.0

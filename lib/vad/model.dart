@@ -2,10 +2,14 @@
 import "dart:io";
 
 import 'package:flutter/services.dart';
+import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as p;
 import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa_onnx;
+
 import 'model_config.dart';
+
+Logger logger = Logger();
 
 String _abs(String base, String relative) =>
     relative.isEmpty ? '' : p.join(base, relative);
@@ -17,6 +21,7 @@ Future<ModelDirs> prepareModelDirs() async {
   final d = (await getApplicationSupportDirectory()).path;
   final firstAsset = selectedAsrModel.assetFiles[0];
   final asrDir = '$d/${firstAsset.substring(0, firstAsset.lastIndexOf('/'))}';
+  logger.i("using model ad basDir $d and asrModelDir at $asrDir");
   return ModelDirs(baseDir: d, asrModelDir: asrDir);
 }
 
@@ -29,6 +34,8 @@ class ModelDirs {
 /// Prepare model config: copy assets to disk and resolve all paths.
 Future<sherpa_onnx.VadModelConfig> prepareModelConfig() async {
   await _copyAllAssetFiles();
+
+  logger.i("preparing model config");
 
   final d = (await getApplicationSupportDirectory()).path;
   final cfg = defaultVadConfig;
@@ -60,8 +67,9 @@ Future<sherpa_onnx.VadModelConfig> prepareModelConfig() async {
 // ── Asset copy helpers ───────────────────────────────────────────────────
 
 Future<void> _copyAllAssetFiles() async {
-  final AssetManifest assetManifest =
-      await AssetManifest.loadFromAssetBundle(rootBundle);
+  final AssetManifest assetManifest = await AssetManifest.loadFromAssetBundle(
+    rootBundle,
+  );
   final List<String> assets = assetManifest.listAssets();
   for (final src in assets) {
     final dst = _stripLeadingDirectory(src);
@@ -75,13 +83,15 @@ String _stripLeadingDirectory(String src, {int n = 1}) {
 
 Future<String> _copyAssetFile(String src, [String? dst]) async {
   final Directory directory = await getApplicationSupportDirectory();
-  if (dst == null) dst = p.basename(src);
+  dst ??= p.basename(src);
   final target = p.join(directory.path, dst);
   bool exists = await File(target).exists();
   final data = await rootBundle.load(src);
   if (!exists || File(target).lengthSync() != data.lengthInBytes) {
-    final List<int> bytes =
-        data.buffer.asUint8List(data.offsetInBytes, data.lengthInBytes);
+    final List<int> bytes = data.buffer.asUint8List(
+      data.offsetInBytes,
+      data.lengthInBytes,
+    );
     await (await File(target).create(recursive: true)).writeAsBytes(bytes);
   }
   return target;

@@ -5,7 +5,11 @@ import 'package:audionotebook/model/audio_item.dart';
 import 'package:audionotebook/ui/audio_page_manager.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:just_audio/just_audio.dart';
+import 'package:logger/web.dart';
+
+Logger logger = Logger();
 
 const supportedAudioExtensions = {
   '.mp3',
@@ -32,18 +36,26 @@ Future<Directory> audioDirectory() async {
 
 Future<List<AudioItem>> loadAudioEntries() async {
   final directory = await audioDirectory();
-  if (!await directory.exists()) return [];
+  List<File> files = [];
 
-  final files =
-      directory.listSync().whereType<File>().where((file) {
-        final dot = file.path.lastIndexOf('.');
-        final extension = dot == -1
-            ? ''
-            : file.path.substring(dot).toLowerCase();
-        return supportedAudioExtensions.contains(extension);
-      }).toList()..sort(
-        (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
-      );
+  if (!await directory.exists()) {
+    final placeholderBytes = (await rootBundle.load('assets/centv.wav')).buffer
+        .asUint8List();
+    final placeholderFile = File('${Directory.systemTemp.path}/centv.wav');
+    await placeholderFile.writeAsBytes(placeholderBytes, flush: true);
+    files = [placeholderFile];
+  } else {
+    files =
+        directory.listSync().whereType<File>().where((file) {
+          final dot = file.path.lastIndexOf('.');
+          final extension = dot == -1
+              ? ''
+              : file.path.substring(dot).toLowerCase();
+          return supportedAudioExtensions.contains(extension);
+        }).toList()..sort(
+          (a, b) => b.statSync().modified.compareTo(a.statSync().modified),
+        );
+  }
 
   final entries = <AudioItem>[];
   for (final file in files) {
@@ -65,6 +77,7 @@ Future<List<AudioItem>> loadAudioEntries() async {
       await player.dispose();
     }
   }
+  logger.i("got entries: $entries");
   return entries;
 }
 
