@@ -1,3 +1,7 @@
+import 'dart:ui';
+
+import 'package:audionotebook/utils/colors.dart';
+
 enum SegmentLanguage { mvskoke, english, mixed }
 
 class Segment {
@@ -25,4 +29,18 @@ class Segment {
     this.start = start;
     this.end = end;
   }
+}
+
+extension SegmentLanguageStyle on SegmentLanguage {
+  String get label => switch (this) {
+    SegmentLanguage.mvskoke => 'Mvskoke',
+    SegmentLanguage.english => 'English',
+    SegmentLanguage.mixed => 'Mixed',
+  };
+
+  Color get color => switch (this) {
+    SegmentLanguage.mvskoke => AppColors.green,
+    SegmentLanguage.english => AppColors.blue,
+    SegmentLanguage.mixed => AppColors.orange,
+  };
 }

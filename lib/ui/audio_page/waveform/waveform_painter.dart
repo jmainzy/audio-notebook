@@ -2,8 +2,6 @@ import 'package:audionotebook/model/voice_segment.dart';
 import 'package:flutter/material.dart';
 import 'package:just_waveform/just_waveform.dart';
 
-import 'segment_language_style.dart';
-
 class WaveformPainter extends CustomPainter {
   final Waveform waveform;
   final List<Segment> fragments;

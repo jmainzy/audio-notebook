@@ -1,8 +1,8 @@
 import 'dart:io';
 
-import 'package:audionotebook/ui/audio_page.dart';
+import 'package:audionotebook/ui/audio_page/audio_page.dart';
 import 'package:audionotebook/model/audio_item.dart';
-import 'package:audionotebook/ui/audio_page_manager.dart';
+import 'package:audionotebook/ui/audio_page/audio_page_manager.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart';

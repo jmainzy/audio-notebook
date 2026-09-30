@@ -5,7 +5,7 @@ import 'dart:math';
 
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
-import 'package:audionotebook/ui/audio_page_state.dart';
+import 'package:audionotebook/ui/audio_page/audio_page_state.dart';
 import 'package:audionotebook/utils/vad.dart';
 import 'package:flutter/material.dart';
 import 'package:just_waveform/just_waveform.dart';
@@ -179,7 +179,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
         audioPath: value.audioPath!,
         lang: 'en',
       );
-      print(result?.transcription.text);
+      logger.i(result?.transcription.text);
     }
     value = value.copyWith(isTranscribing: false);
   }
