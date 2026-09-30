@@ -10,12 +10,14 @@ class Segment {
     required this.start,
     required this.end,
     this.text = "",
+    this.notes = "",
     this.language = SegmentLanguage.mixed,
   });
 
   double start;
   double end;
   final String text;
+  final String notes;
   final SegmentLanguage language;
 
   /// Helper to update real timing after alignment

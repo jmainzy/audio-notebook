@@ -21,13 +21,15 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   final AudioService _audioService = AudioService();
   final playbackPosition = ValueNotifier(Duration.zero);
   final asrController = WhisperController();
+  bool _segmentPlaybackActive = false;
+  int _segmentPlaybackGeneration = 0;
 
   AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
     _audioService.positionStream.listen((pos) {
       playbackPosition.value = pos;
     });
     _audioService.stateStream.listen((s) {
-      value = value.copyWith(isPlaying: s.playing);
+      value = value.copyWith(isPlaying: _segmentPlaybackActive || s.playing);
     });
   }
 
@@ -127,6 +129,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
               start: (item['start'] as num).toDouble(),
               end: (item['end'] as num).toDouble(),
               text: item['text'] as String? ?? '',
+              notes: item['notes'] as String? ?? '',
               language: SegmentLanguage.values.firstWhere(
                 (language) => language.name == item['language'],
                 orElse: () => SegmentLanguage.mixed,
@@ -157,6 +160,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
             'start': segment.start,
             'end': segment.end,
             'text': segment.text,
+            'notes': segment.notes,
             'language': segment.language.name,
           },
       ];
@@ -197,6 +201,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
           start: remaining[newIndex].start,
           end: remaining[newIndex].end,
           text: remaining[newIndex].text,
+          notes: remaining[newIndex].notes,
           language: remaining[newIndex].language,
         ),
     ];
@@ -247,11 +252,72 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
 
   void seekTo(Duration d) => _audioService.seek(d);
 
+  void setPlaybackMode(PlaybackMode mode) {
+    value = value.copyWith(playbackMode: mode);
+  }
+
   Future<void> togglePlayback() async {
     if (value.isPlaying) {
+      if (_segmentPlaybackActive) {
+        _segmentPlaybackGeneration++;
+        _segmentPlaybackActive = false;
+      }
       await _audioService.pause();
+      value = value.copyWith(isPlaying: false);
     } else {
-      await _audioService.play();
+      switch (value.playbackMode) {
+        case PlaybackMode.fullRecording:
+          await _audioService.play();
+        case PlaybackMode.segments:
+        case PlaybackMode.transcribed:
+          final segments = _segmentsForPlayback();
+          if (segments.isEmpty) return;
+          final generation = ++_segmentPlaybackGeneration;
+          _segmentPlaybackActive = true;
+          value = value.copyWith(isPlaying: true);
+          unawaited(_playSegments(segments, generation));
+      }
+    }
+  }
+
+  List<Segment> _segmentsForPlayback() {
+    final segments = value.fragments.where((segment) {
+      if (segment.start < 0 || segment.end <= segment.start) return false;
+      if (value.playbackMode == PlaybackMode.transcribed) {
+        return segment.text.trim().isNotEmpty ||
+            segment.notes.trim().isNotEmpty;
+      }
+      return true;
+    }).toList()..sort((first, second) => first.start.compareTo(second.start));
+    return segments;
+  }
+
+  Future<void> _playSegments(List<Segment> segments, int generation) async {
+    try {
+      for (final segment in segments) {
+        if (generation != _segmentPlaybackGeneration) break;
+
+        final end = Duration(milliseconds: (segment.end * 1000).round());
+        await _audioService.seek(
+          Duration(milliseconds: (segment.start * 1000).round()),
+        );
+        if (generation != _segmentPlaybackGeneration) break;
+
+        unawaited(_audioService.play());
+        while (generation == _segmentPlaybackGeneration &&
+            _audioService.position < end) {
+          await Future<void>.delayed(const Duration(milliseconds: 20));
+        }
+        if (generation != _segmentPlaybackGeneration) break;
+        await _audioService.pause();
+      }
+    } catch (error) {
+      logger.w('Segment playback stopped: $error');
+    } finally {
+      if (generation == _segmentPlaybackGeneration) {
+        _segmentPlaybackActive = false;
+        value = value.copyWith(isPlaying: false);
+      }
     }
   }
 
@@ -347,6 +413,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       start: fragment.start,
       end: fragment.end,
       text: text,
+      notes: fragment.notes,
       language: fragment.language,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
@@ -367,7 +434,29 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       start: fragment.start,
       end: fragment.end,
       text: fragment.text,
+      notes: fragment.notes,
       language: language,
+    );
+    value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
+
+    final audioPath = value.audioPath;
+    if (audioPath != null) unawaited(_saveSegments(audioPath, fragments));
+  }
+
+  void updateFragmentNotes(int index, String notes) {
+    if (value.isReadOnly || index < 0 || index >= value.fragments.length) {
+      return;
+    }
+
+    final fragments = List<Segment>.from(value.fragments);
+    final fragment = fragments[index];
+    fragments[index] = Segment(
+      index: fragment.index,
+      start: fragment.start,
+      end: fragment.end,
+      text: fragment.text,
+      notes: notes,
+      language: fragment.language,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
 

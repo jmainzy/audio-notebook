@@ -1,6 +1,8 @@
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:just_waveform/just_waveform.dart';
 
+enum PlaybackMode { fullRecording, segments, transcribed }
+
 class AudioPageState {
   final bool isProcessing;
   final double progress;
@@ -16,6 +18,7 @@ class AudioPageState {
   final bool isReadOnly;
   final bool isTranscribing;
   final bool isSegmenting;
+  final PlaybackMode playbackMode;
   // final ClaimInfo? activeClaim;
 
   const AudioPageState({
@@ -32,7 +35,8 @@ class AudioPageState {
     this.selectedFragmentIndex,
     this.isReadOnly = false,
     this.isTranscribing = false,
-    this.isSegmenting = false
+    this.isSegmenting = false,
+    this.playbackMode = PlaybackMode.fullRecording,
   });
 
   AudioPageState copyWith({
@@ -58,7 +62,8 @@ class AudioPageState {
     bool clearSelection = false,
     bool? isReadOnly,
     bool? isTranscribing,
-    bool? isSegmenting
+    bool? isSegmenting,
+    PlaybackMode? playbackMode,
   }) {
     return AudioPageState(
       isProcessing: isProcessing ?? this.isProcessing,
@@ -78,7 +83,8 @@ class AudioPageState {
           : (selectedFragmentIndex ?? this.selectedFragmentIndex),
       isReadOnly: isReadOnly ?? this.isReadOnly,
       isTranscribing: isTranscribing ?? this.isTranscribing,
-      isSegmenting: isSegmenting ?? this.isSegmenting
+      isSegmenting: isSegmenting ?? this.isSegmenting,
+      playbackMode: playbackMode ?? this.playbackMode,
     );
   }
 }

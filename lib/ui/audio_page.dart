@@ -174,6 +174,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           selectedIndex: state.selectedFragmentIndex,
                           onSelect: widget.pageManager.selectFragment,
                           onTextChanged: widget.pageManager.updateFragmentText,
+                          onNotesChanged:
+                              widget.pageManager.updateFragmentNotes,
                           onLanguageChanged:
                               widget.pageManager.updateFragmentLanguage,
                           onCapture: (i) => widget.pageManager
@@ -195,24 +197,59 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                         ),
                       ),
                       const SizedBox(height: 16),
-                      Container(
-                        decoration: BoxDecoration(
-                          color: const Color(0xff292521),
-                          borderRadius: BorderRadius.circular(28),
-                        ),
-                        child: IconButton(
-                          onPressed: state.audioPath == null
-                              ? null
-                              : widget.pageManager.togglePlayback,
-                          tooltip: state.isPlaying
-                              ? 'Pause recording'
-                              : 'Play recording',
-                          icon: Icon(
-                            state.isPlaying ? Icons.pause : Icons.play_arrow,
-                            color: Colors.white,
-                            size: 30,
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Align(
+                              alignment: Alignment.centerLeft,
+                              child: DropdownButton<PlaybackMode>(
+                                value: state.playbackMode,
+                                isDense: true,
+                                items: PlaybackMode.values
+                                    .map(
+                                      (mode) => DropdownMenuItem(
+                                        value: mode,
+                                        child: Text(switch (mode) {
+                                          PlaybackMode.fullRecording =>
+                                            'Full Recording',
+                                          PlaybackMode.segments => 'Segments',
+                                          PlaybackMode.transcribed =>
+                                            'Transcribed',
+                                        }),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (mode) {
+                                  if (mode != null) {
+                                    widget.pageManager.setPlaybackMode(mode);
+                                  }
+                                },
+                              ),
+                            ),
                           ),
-                        ),
+                          Container(
+                            decoration: BoxDecoration(
+                              color: const Color(0xff292521),
+                              borderRadius: BorderRadius.circular(28),
+                            ),
+                            child: IconButton(
+                              onPressed: state.audioPath == null
+                                  ? null
+                                  : widget.pageManager.togglePlayback,
+                              tooltip: state.isPlaying
+                                  ? 'Pause recording'
+                                  : 'Play recording',
+                              icon: Icon(
+                                state.isPlaying
+                                    ? Icons.pause
+                                    : Icons.play_arrow,
+                                color: Colors.white,
+                                size: 30,
+                              ),
+                            ),
+                          ),
+                          const Expanded(child: SizedBox()),
+                        ],
                       ),
                     ],
                   );

@@ -218,8 +218,16 @@ class _WaveformViewState extends State<WaveformView> {
                   keys.contains(LogicalKeyboardKey.controlRight) ||
                   keys.contains(LogicalKeyboardKey.metaLeft) ||
                   keys.contains(LogicalKeyboardKey.metaRight);
+              final isShift =
+                  keys.contains(LogicalKeyboardKey.shiftLeft) ||
+                  keys.contains(LogicalKeyboardKey.shiftRight);
 
-              if (isControl ||
+              if (isShift) {
+                final delta = event.scrollDelta.dy != 0
+                    ? event.scrollDelta.dy
+                    : event.scrollDelta.dx;
+                applyPan(delta);
+              } else if (isControl ||
                   event.scrollDelta.dy.abs() > event.scrollDelta.dx.abs()) {
                 // Negative dy means scrolling UP. We want wheel up = Zoom IN.
                 applyZoom(-event.scrollDelta.dy * 0.01, event.localPosition.dx);

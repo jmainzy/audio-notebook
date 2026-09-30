@@ -19,6 +19,7 @@ class FragmentList extends StatefulWidget {
   final Function(int) onClear;
   final Function(int) onDelete;
   final void Function(int, String) onTextChanged;
+  final void Function(int, String) onNotesChanged;
   final void Function(int, SegmentLanguage) onLanguageChanged;
 
   const FragmentList({
@@ -34,6 +35,7 @@ class FragmentList extends StatefulWidget {
     required this.onClear,
     required this.onDelete,
     required this.onTextChanged,
+    required this.onNotesChanged,
     required this.onLanguageChanged,
   });
 
@@ -126,6 +128,7 @@ class _StudioFragmentListState extends State<FragmentList> {
               onClear: hasTime ? () => widget.onClear(i) : null,
               onDelete: () => widget.onDelete(i),
               onTextChanged: (text) => widget.onTextChanged(i, text),
+              onNotesChanged: (notes) => widget.onNotesChanged(i, notes),
               onLanguageChanged: (language) =>
                   widget.onLanguageChanged(i, language),
             );
@@ -147,6 +150,7 @@ class SegmentCard extends StatefulWidget {
     required this.isSelected,
     required this.onTap,
     required this.onTextChanged,
+    required this.onNotesChanged,
     required this.onLanguageChanged,
     required this.onDelete,
     this.onDoubleTap,
@@ -158,6 +162,7 @@ class SegmentCard extends StatefulWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final ValueChanged<String> onTextChanged;
+  final ValueChanged<String> onNotesChanged;
   final ValueChanged<SegmentLanguage> onLanguageChanged;
   final VoidCallback onDelete;
   final VoidCallback? onDoubleTap;
@@ -169,14 +174,19 @@ class SegmentCard extends StatefulWidget {
 
 class _SegmentCardState extends State<SegmentCard> {
   late final TextEditingController _textController;
+  late final TextEditingController _notesController;
   late final FocusNode _textFocusNode;
+  late final FocusNode _notesFocusNode;
   bool _isEditingText = false;
+  bool _isEditingNotes = false;
 
   @override
   void initState() {
     super.initState();
     _textController = TextEditingController(text: widget.segment.text);
+    _notesController = TextEditingController(text: widget.segment.notes);
     _textFocusNode = FocusNode()..addListener(_handleTextFocusChange);
+    _notesFocusNode = FocusNode()..addListener(_handleNotesFocusChange);
   }
 
   @override
@@ -185,6 +195,9 @@ class _SegmentCardState extends State<SegmentCard> {
     if (!_isEditingText && oldWidget.segment.text != widget.segment.text) {
       _textController.text = widget.segment.text;
     }
+    if (!_isEditingNotes && oldWidget.segment.notes != widget.segment.notes) {
+      _notesController.text = widget.segment.notes;
+    }
   }
 
   @override
@@ -192,7 +205,12 @@ class _SegmentCardState extends State<SegmentCard> {
     _textFocusNode
       ..removeListener(_handleTextFocusChange)
       ..dispose();
+    if (_isEditingNotes) widget.onNotesChanged(_notesController.text);
+    _notesFocusNode
+      ..removeListener(_handleNotesFocusChange)
+      ..dispose();
     _textController.dispose();
+    _notesController.dispose();
     super.dispose();
   }
 
@@ -212,6 +230,16 @@ class _SegmentCardState extends State<SegmentCard> {
     final text = _textController.text;
     setState(() => _isEditingText = false);
     widget.onTextChanged(text);
+  }
+
+  void _handleNotesFocusChange() {
+    if (!_notesFocusNode.hasFocus) _finishEditingNotes();
+  }
+
+  void _finishEditingNotes() {
+    if (!_isEditingNotes) return;
+    _isEditingNotes = false;
+    widget.onNotesChanged(_notesController.text);
   }
 
   @override
@@ -335,6 +363,8 @@ class _SegmentCardState extends State<SegmentCard> {
                         ),
                       SizedBox(height: Dimens.marginShort),
                       TextField(
+                        controller: _notesController,
+                        focusNode: _notesFocusNode,
                         minLines: 1,
                         maxLines: 2,
                         textCapitalization: TextCapitalization.sentences,
@@ -343,6 +373,9 @@ class _SegmentCardState extends State<SegmentCard> {
                           isDense: true,
                           border: OutlineInputBorder(),
                         ),
+                        onChanged: (_) => _isEditingNotes = true,
+                        onTapOutside: (_) => _notesFocusNode.unfocus(),
+                        onSubmitted: (_) => _notesFocusNode.unfocus(),
                       ),
                     ],
                   ),

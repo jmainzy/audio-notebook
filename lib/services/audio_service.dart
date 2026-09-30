@@ -6,6 +6,7 @@ class AudioService {
   Stream<Duration> get positionStream => _player.positionStream;
   Stream<PlayerState> get stateStream => _player.playerStateStream;
   Duration? get duration => _player.duration;
+  Duration get position => _player.position;
 
   Future<Duration> load(String path) async {
     await _player.setFilePath(path);
