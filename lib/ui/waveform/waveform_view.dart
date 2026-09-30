@@ -264,6 +264,8 @@ class _WaveformViewState extends State<WaveformView> {
 
           child: Scrollbar(
             controller: widget.scrollController,
+            thumbVisibility: true,
+            interactive: true,
             child: SingleChildScrollView(
               controller: widget.scrollController,
               scrollDirection: Axis.horizontal,
@@ -300,9 +302,7 @@ class _WaveformViewState extends State<WaveformView> {
                   },
                   onHorizontalDragUpdate: (d) {
                     if (_isPanZooming) return;
-                    if (_dragIndex == null) {
-                      applyPan(-d.delta.dx);
-                    } else {
+                    if (_dragIndex != null) {
                       _handleDragUpdate(
                         d.localPosition.dx,
                         contentWidth,
@@ -438,28 +438,17 @@ class _WaveformViewState extends State<WaveformView> {
     final pixelsPerSecond = contentWidth / totalSec;
     final thresholdSec = 15.0 / pixelsPerSecond;
 
-    final pinnedPositions = <double>{};
-    for (final f in widget.state.fragments) {
-      if (f.start >= 0) {
-        pinnedPositions.add(f.start);
-        pinnedPositions.add(f.end);
-      }
-    }
-
-    bool isNearPinned(double t) =>
-        pinnedPositions.any((p) => (p - t).abs() < thresholdSec);
-
     for (var f in widget.state.fragments) {
       if (f.start < 0) continue;
 
-      if ((f.start - time).abs() < thresholdSec && !isNearPinned(f.start)) {
+      if ((f.start - time).abs() < thresholdSec) {
         setState(() {
           _dragIndex = f.index;
           _dragStart = true;
         });
         return;
       }
-      if ((f.end - time).abs() < thresholdSec && !isNearPinned(f.end)) {
+      if ((f.end - time).abs() < thresholdSec) {
         setState(() {
           _dragIndex = f.index;
           _dragStart = false;

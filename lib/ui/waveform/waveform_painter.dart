@@ -2,6 +2,8 @@ import 'package:audionotebook/model/voice_segment.dart';
 import 'package:flutter/material.dart';
 import 'package:just_waveform/just_waveform.dart';
 
+import 'segment_language_style.dart';
+
 class WaveformPainter extends CustomPainter {
   final Waveform waveform;
   final List<Segment> fragments;
@@ -72,19 +74,31 @@ class WaveformPainter extends CustomPainter {
 
     for (final frag in fragments) {
       if (frag.start < 0) continue;
-      final Color lineColor = accentColor;
+      final isPlaying =
+          playbackPosSeconds >= frag.start && playbackPosSeconds < frag.end;
+      final Color lineColor = frag.language.color;
 
       final paintLine = Paint()
         ..color = lineColor
-        ..strokeWidth = 2.0;
+        ..strokeWidth = isPlaying ? 3.0 : 2.0;
 
-      final paintFill = Paint()..color = lineColor.withValues(alpha: 0.15);
+      final paintFill = Paint()
+        ..color = lineColor.withValues(alpha: isPlaying ? 0.38 : 0.2);
 
       // Map time -> pixels using contentWidth
       final xStart = (frag.start / totalSeconds) * size.width;
       final xEnd = (frag.end / totalSeconds) * size.width;
 
       canvas.drawRect(Rect.fromLTRB(xStart, 0, xEnd, size.height), paintFill);
+      if (isPlaying) {
+        canvas.drawRect(
+          Rect.fromLTRB(xStart + 1, 1, xEnd - 1, size.height - 1),
+          Paint()
+            ..color = Colors.white
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 2,
+        );
+      }
       canvas.drawLine(
         Offset(xStart, 0),
         Offset(xStart, size.height),

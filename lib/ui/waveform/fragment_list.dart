@@ -2,6 +2,9 @@ import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/utils/dimens.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
+import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+
+import 'segment_language_style.dart';
 
 class FragmentList extends StatefulWidget {
   final List<Segment> fragments;
@@ -14,7 +17,9 @@ class FragmentList extends StatefulWidget {
   final Function(int) onDoubleTap;
   final Function(int) onCapture;
   final Function(int) onClear;
+  final Function(int) onDelete;
   final void Function(int, String) onTextChanged;
+  final void Function(int, SegmentLanguage) onLanguageChanged;
 
   const FragmentList({
     super.key,
@@ -27,7 +32,9 @@ class FragmentList extends StatefulWidget {
     required this.onDoubleTap,
     required this.onCapture,
     required this.onClear,
+    required this.onDelete,
     required this.onTextChanged,
+    required this.onLanguageChanged,
   });
 
   @override
@@ -35,8 +42,7 @@ class FragmentList extends StatefulWidget {
 }
 
 class _StudioFragmentListState extends State<FragmentList> {
-  final ScrollController _scrollController = ScrollController();
-  final double _rowHeight = 120.0;
+  final ItemScrollController _itemScrollController = ItemScrollController();
   int _lastActiveIndex = -1;
 
   @override
@@ -49,7 +55,6 @@ class _StudioFragmentListState extends State<FragmentList> {
   @override
   void dispose() {
     widget.playbackNotifier.removeListener(_onPlaybackPositionChanged);
-    _scrollController.dispose();
     super.dispose();
   }
 
@@ -72,18 +77,13 @@ class _StudioFragmentListState extends State<FragmentList> {
   }
 
   void _scrollToIndex(int index) {
-    if (!_scrollController.hasClients) return;
+    if (!_itemScrollController.isAttached) return;
 
-    // Put the active item exactly at the top (or 1 row down for slight context)
-    final targetIndex = index > 0 ? index - 1 : 0;
-    final idealOffset = targetIndex * _rowHeight;
-    final min = _scrollController.position.minScrollExtent;
-    final max = _scrollController.position.maxScrollExtent;
-
-    _scrollController.animateTo(
-      idealOffset.clamp(min, max),
-      duration: const Duration(milliseconds: 250),
-      curve: Curves.easeOut,
+    _itemScrollController.scrollTo(
+      index: index,
+      alignment: 0,
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeInOutCubic,
     );
   }
 
@@ -98,8 +98,8 @@ class _StudioFragmentListState extends State<FragmentList> {
     return ValueListenableBuilder<Duration>(
       valueListenable: widget.playbackNotifier,
       builder: (context, currentPos, _) {
-        return ListView.separated(
-          controller: _scrollController,
+        return ScrollablePositionedList.separated(
+          itemScrollController: _itemScrollController,
           itemCount: widget.fragments.length,
           itemBuilder: (ctx, i) {
             final f = widget.fragments[i];
@@ -124,7 +124,10 @@ class _StudioFragmentListState extends State<FragmentList> {
               },
               onDoubleTap: hasTime ? () => widget.onDoubleTap(i) : null,
               onClear: hasTime ? () => widget.onClear(i) : null,
+              onDelete: () => widget.onDelete(i),
               onTextChanged: (text) => widget.onTextChanged(i, text),
+              onLanguageChanged: (language) =>
+                  widget.onLanguageChanged(i, language),
             );
           },
           separatorBuilder: (BuildContext context, int index) {
@@ -144,6 +147,8 @@ class SegmentCard extends StatefulWidget {
     required this.isSelected,
     required this.onTap,
     required this.onTextChanged,
+    required this.onLanguageChanged,
+    required this.onDelete,
     this.onDoubleTap,
     this.onClear,
   });
@@ -153,6 +158,8 @@ class SegmentCard extends StatefulWidget {
   final bool isSelected;
   final VoidCallback onTap;
   final ValueChanged<String> onTextChanged;
+  final ValueChanged<SegmentLanguage> onLanguageChanged;
+  final VoidCallback onDelete;
   final VoidCallback? onDoubleTap;
   final VoidCallback? onClear;
 
@@ -209,78 +216,139 @@ class _SegmentCardState extends State<SegmentCard> {
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: widget.isSelected
-          ? Colors.amber.withValues(alpha: 0.22)
-          : Colors.white.withValues(alpha: 0.82),
-      borderRadius: BorderRadius.circular(10),
-      child: InkWell(
-        onTap: widget.onTap,
-        onDoubleTap: widget.onDoubleTap,
+    final languageColor = widget.segment.language.color;
+    return Container(
+      decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(10),
-        focusColor: Colors.white10,
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-          child: Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '${formatDuration(Duration(milliseconds: (widget.segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (widget.segment.end * 1000).round()))}',
-                      style: const TextStyle(
-                        fontFamily: 'Arial',
-                        fontSize: 12,
-                        color: Color(0xff887b70),
+        border: Border.all(
+          color: widget.isSelected ? Colors.amber.shade800 : Colors.transparent,
+          width: 2,
+        ),
+      ),
+      child: Material(
+        color: languageColor.withValues(alpha: widget.isSelected ? 0.3 : 0.15),
+        borderRadius: BorderRadius.circular(8),
+        child: InkWell(
+          onTap: widget.onTap,
+          onDoubleTap: widget.onDoubleTap,
+          borderRadius: BorderRadius.circular(8),
+          focusColor: Colors.white10,
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              '${formatDuration(Duration(milliseconds: (widget.segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (widget.segment.end * 1000).round()))}',
+                              style: const TextStyle(
+                                fontFamily: 'Arial',
+                                fontSize: 12,
+                                color: Color(0xff887b70),
+                              ),
+                            ),
+                          ),
+                          DropdownButtonHideUnderline(
+                            child: DropdownButton<SegmentLanguage>(
+                              value: widget.segment.language,
+                              isDense: true,
+                              iconSize: 18,
+                              items: SegmentLanguage.values
+                                  .map(
+                                    (language) => DropdownMenuItem(
+                                      value: language,
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            width: 10,
+                                            height: 10,
+                                            decoration: BoxDecoration(
+                                              color: language.color,
+                                              shape: BoxShape.circle,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            language.label,
+                                            style: TextStyle(fontSize: 12),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: (language) {
+                                if (language != null) {
+                                  widget.onLanguageChanged(language);
+                                }
+                              },
+                            ),
+                          ),
+                          IconButton(
+                            tooltip: 'Delete segment',
+                            onPressed: widget.onDelete,
+                            visualDensity: VisualDensity.compact,
+                            constraints: const BoxConstraints.tightFor(
+                              width: 32,
+                              height: 32,
+                            ),
+                            icon: const Icon(Icons.close, size: 18),
+                          ),
+                        ],
                       ),
-                    ),
-                    SizedBox(height: Dimens.marginShort),
-                    if (_isEditingText)
+                      SizedBox(height: Dimens.marginShort),
+                      if (_isEditingText)
+                        TextField(
+                          controller: _textController,
+                          focusNode: _textFocusNode,
+                          minLines: 1,
+                          maxLines: 3,
+                          textCapitalization: TextCapitalization.sentences,
+                          decoration: const InputDecoration(
+                            hintText: 'Transcription here',
+                            isDense: true,
+                            border: OutlineInputBorder(),
+                          ),
+                          onTapOutside: (_) => _textFocusNode.unfocus(),
+                          onSubmitted: (_) => _textFocusNode.unfocus(),
+                        )
+                      else
+                        InkWell(
+                          onTap: _startEditingText,
+                          child: SizedBox(
+                            width: double.infinity,
+                            child: Text(
+                              widget.segment.text.isEmpty
+                                  ? 'Transcription here'
+                                  : widget.segment.text,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(fontSize: 13),
+                            ),
+                          ),
+                        ),
+                      SizedBox(height: Dimens.marginShort),
                       TextField(
-                        controller: _textController,
-                        focusNode: _textFocusNode,
                         minLines: 1,
-                        maxLines: 3,
+                        maxLines: 2,
                         textCapitalization: TextCapitalization.sentences,
                         decoration: const InputDecoration(
-                          hintText: 'Transcription here',
+                          hintText: 'Notes',
                           isDense: true,
                           border: OutlineInputBorder(),
                         ),
-                        onTapOutside: (_) => _textFocusNode.unfocus(),
-                        onSubmitted: (_) => _textFocusNode.unfocus(),
-                      )
-                    else
-                      InkWell(
-                        onTap: _startEditingText,
-                        child: SizedBox(
-                          width: double.infinity,
-                          child: Text(
-                            widget.segment.text.isEmpty
-                                ? 'Transcription here'
-                                : widget.segment.text,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(fontSize: 13),
-                          ),
-                        ),
                       ),
-                    SizedBox(height: Dimens.marginShort),
-                    TextField(
-                      minLines: 1,
-                      maxLines: 2,
-                      textCapitalization: TextCapitalization.sentences,
-                      decoration: const InputDecoration(
-                        hintText: 'Notes',
-                        isDense: true,
-                        border: OutlineInputBorder(),
-                      ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-              ),
-            ],
+              ],
+            ),
           ),
         ),
       ),

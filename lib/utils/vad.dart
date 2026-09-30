@@ -12,10 +12,10 @@ import 'package:audionotebook/model/voice_segment.dart';
 ///
 ///
 final int frameShift = 20; // milliseconds
-final double energyThreshold = 0.001;
+final double energyThreshold = 0.1;
 final double preEmphasis = 0.90;
 const int _silenceGapToleranceMs = 250;
-const int _targetSegmentDurationMs = 6000;
+const int _targetSegmentDurationMs = 8000;
 int sampleRate = 16000;
 int frameLength = 25;
 
@@ -102,9 +102,11 @@ List<Segment> _decisionsToSegments(List<int> decisions, int sampleCount) {
     } else if (!voiced && startSample != -1) {
       final endSample = ((frame - 1) * frameShiftSamples + frameLengthSamples)
           .clamp(startSample, sampleCount);
-      segments.addAll(
-        _splitIntoTargetSegments(startSample, endSample, sampleCount),
-      );
+      if (endSample - startSample >= sampleRate) {
+        segments.addAll(
+          _splitIntoTargetSegments(startSample, endSample, sampleCount),
+        );
+      }
       startSample = -1;
     }
   }
@@ -155,7 +157,8 @@ List<Segment> _splitIntoTargetSegments(
     segments.add(
       Segment(
         start: (segmentStart / sampleCount).clamp(0.0, 1.0),
-        end: (segmentEnd / sampleCount).clamp(0.0, 1.0), index: index,
+        end: (segmentEnd / sampleCount).clamp(0.0, 1.0),
+        index: index,
       ),
     );
   }

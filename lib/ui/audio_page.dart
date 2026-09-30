@@ -75,13 +75,13 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              entry.filename,
-              style: const TextStyle(
-                fontFamily: 'Arial',
-                color: Color(0xff887b70),
-              ),
-            ),
+            // Text(
+            //   entry.filename,
+            //   style: const TextStyle(
+            //     fontFamily: 'Arial',
+            //     color: Color(0xff887b70),
+            //   ),
+            // ),
             const SizedBox(height: 5),
             Text(
               '${formatDate(context, entry.createdAt)}  ·  ${formatTime(context, entry.createdAt)}',
@@ -174,9 +174,12 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           selectedIndex: state.selectedFragmentIndex,
                           onSelect: widget.pageManager.selectFragment,
                           onTextChanged: widget.pageManager.updateFragmentText,
+                          onLanguageChanged:
+                              widget.pageManager.updateFragmentLanguage,
                           onCapture: (i) => widget.pageManager
                               .captureFragmentTiming(context, i),
                           onClear: widget.pageManager.clearFragmentTiming,
+                          onDelete: widget.pageManager.deleteFragment,
                           onJumpTo: (idx) {
                             widget.pageManager.exitFocusMode();
                             final frag = state.fragments[idx];

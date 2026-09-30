@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
@@ -82,6 +83,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       final audioData = wav.channels[0];
       final detected = await detectVoiceSegments(audioData, sampleRate);
       final durationSeconds = value.audioDuration.inMilliseconds / 1000.0;
+      final random = Random();
 
       // VAD returns normalized positions; the waveform painter uses seconds.
       final segments = [
@@ -91,6 +93,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
             start: detected[index].start * durationSeconds,
             end: detected[index].end * durationSeconds,
             text: detected[index].text,
+            language: SegmentLanguage
+                .values[random.nextInt(SegmentLanguage.values.length)],
           ),
       ];
       value = value.copyWith(fragments: segments);
@@ -123,6 +127,10 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
               start: (item['start'] as num).toDouble(),
               end: (item['end'] as num).toDouble(),
               text: item['text'] as String? ?? '',
+              language: SegmentLanguage.values.firstWhere(
+                (language) => language.name == item['language'],
+                orElse: () => SegmentLanguage.mixed,
+              ),
             ),
           )
           .toList();
@@ -149,6 +157,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
             'start': segment.start,
             'end': segment.end,
             'text': segment.text,
+            'language': segment.language.name,
           },
       ];
       await cacheFile.writeAsString(jsonEncode(cache));
@@ -173,6 +182,42 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
 
   void selectFragment(int? index) {
     value = value.copyWith(selectedFragmentIndex: index);
+  }
+
+  void deleteFragment(int index) {
+    if (value.isReadOnly || index < 0 || index >= value.fragments.length) {
+      return;
+    }
+
+    final remaining = List<Segment>.from(value.fragments)..removeAt(index);
+    final fragments = [
+      for (var newIndex = 0; newIndex < remaining.length; newIndex++)
+        Segment(
+          index: newIndex,
+          start: remaining[newIndex].start,
+          end: remaining[newIndex].end,
+          text: remaining[newIndex].text,
+          language: remaining[newIndex].language,
+        ),
+    ];
+    final selectedIndex = value.selectedFragmentIndex;
+    final focusedIndex = value.focusedFragmentIndex;
+
+    value = value.copyWith(
+      fragments: fragments,
+      hasUnsavedChanges: true,
+      clearSelection: selectedIndex == index,
+      selectedFragmentIndex: selectedIndex != null && selectedIndex > index
+          ? selectedIndex - 1
+          : selectedIndex,
+      clearFocus: focusedIndex == index,
+      focusedFragmentIndex: focusedIndex != null && focusedIndex > index
+          ? focusedIndex - 1
+          : focusedIndex,
+    );
+
+    final audioPath = value.audioPath;
+    if (audioPath != null) unawaited(_saveSegments(audioPath, fragments));
   }
 
   void enterFocusMode(int index) {
@@ -261,31 +306,31 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
 
     frags[index].setTiming(start: s, end: e);
 
-    Segment? prevTimed;
-    for (int i = index - 1; i >= 0; i--) {
-      if (frags[i].start >= 0) {
-        prevTimed = frags[i];
-        break;
-      }
-    }
-    if (prevTimed != null) {
-      double prevStart = prevTimed.start;
-      if (prevStart > s) prevStart = s;
-      prevTimed.setTiming(start: prevStart, end: s);
-    }
+    // Segment? prevTimed;
+    // for (int i = index - 1; i >= 0; i--) {
+    //   if (frags[i].start >= 0) {
+    //     prevTimed = frags[i];
+    //     break;
+    //   }
+    // }
+    // if (prevTimed != null) {
+    //   double prevStart = prevTimed.start;
+    //   if (prevStart > s) prevStart = s;
+    //   prevTimed.setTiming(start: prevStart, end: s);
+    // }
 
-    Segment? nextTimed;
-    for (int i = index + 1; i < frags.length; i++) {
-      if (frags[i].start >= 0) {
-        nextTimed = frags[i];
-        break;
-      }
-    }
-    if (nextTimed != null) {
-      double nextEnd = nextTimed.end;
-      if (nextEnd < e) nextEnd = e;
-      nextTimed.setTiming(start: e, end: nextEnd);
-    }
+    // Segment? nextTimed;
+    // for (int i = index + 1; i < frags.length; i++) {
+    //   if (frags[i].start >= 0) {
+    //     nextTimed = frags[i];
+    //     break;
+    //   }
+    // }
+    // if (nextTimed != null) {
+    //   double nextEnd = nextTimed.end;
+    //   if (nextEnd < e) nextEnd = e;
+    //   nextTimed.setTiming(start: e, end: nextEnd);
+    // }
 
     value = value.copyWith(fragments: frags, hasUnsavedChanges: true);
   }
@@ -302,6 +347,27 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       start: fragment.start,
       end: fragment.end,
       text: text,
+      language: fragment.language,
+    );
+    value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
+
+    final audioPath = value.audioPath;
+    if (audioPath != null) unawaited(_saveSegments(audioPath, fragments));
+  }
+
+  void updateFragmentLanguage(int index, SegmentLanguage language) {
+    if (value.isReadOnly || index < 0 || index >= value.fragments.length) {
+      return;
+    }
+
+    final fragments = List<Segment>.from(value.fragments);
+    final fragment = fragments[index];
+    fragments[index] = Segment(
+      index: fragment.index,
+      start: fragment.start,
+      end: fragment.end,
+      text: fragment.text,
+      language: language,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
 
