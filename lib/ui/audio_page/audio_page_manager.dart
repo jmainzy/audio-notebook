@@ -7,20 +7,21 @@ import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
 import 'package:audionotebook/ui/audio_page/audio_page_state.dart';
 import 'package:audionotebook/utils/vad.dart';
+import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
+import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
 import 'package:just_waveform/just_waveform.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:wav/wav_file.dart';
-import 'package:whisper_ggml/whisper_ggml.dart';
 
 Logger logger = Logger();
 
 class AudioPageManager extends ValueNotifier<AudioPageState> {
   final AudioService _audioService = AudioService();
   final playbackPosition = ValueNotifier(Duration.zero);
-  final asrController = WhisperController();
+  // final asrController = WhisperController();
   bool _segmentPlaybackActive = false;
   int _segmentPlaybackGeneration = 0;
 
@@ -173,14 +174,14 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   Future<void> transcribe() async {
     value = value.copyWith(isTranscribing: true);
     logger.i('transcribe');
-    if (value.audioPath != null) {
-      final result = await asrController.transcribe(
-        model: WhisperModel.tiny,
-        audioPath: value.audioPath!,
-        lang: 'en',
-      );
-      logger.i(result?.transcription.text);
-    }
+    // if (value.audioPath != null) {
+    //   final result = await asrController.transcribe(
+    //     model: WhisperModel.tiny,
+    //     audioPath: value.audioPath!,
+    //     lang: 'en',
+    //   );
+    //   logger.i(result?.transcription.text);
+    // }
     value = value.copyWith(isTranscribing: false);
   }
 
@@ -465,4 +466,60 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   }
 
   void captureFragmentTiming(BuildContext context, int i) {}
+
+  Future<String> getWavClip(double start, double end) async {
+    final audioPath = value.audioPath;
+    if (audioPath == null) {
+      throw StateError('No audio file is loaded');
+    }
+    if (!start.isFinite || !end.isFinite || end <= start) {
+      throw ArgumentError('The clip end must be greater than its start');
+    }
+
+    final source = Wav.read(File(audioPath).readAsBytesSync());
+    if (source.channels.isEmpty) {
+      throw StateError('The audio file has no channels');
+    }
+
+    final outPath =
+        '${Directory.systemTemp.path}/audio_clip_${DateTime.now().microsecondsSinceEpoch}.wav';
+
+    var cmd =
+        "-y -i \"$audioPath\" -vn -ss $start -to $end -ar 16k -ac 2 -b:a 96k -acodec copy $outPath";
+
+    await FFmpegKit.execute(cmd);
+
+    return outPath;
+  }
+
+  /// Parent folder of the last picked file, used as the saveAs starting point.
+  // String? get _pickedDirectory {
+  //   final path = _pickedFilePath;
+  //   if (path == null) return null;
+  //   final separator = path.lastIndexOf(RegExp(r'[/\\]'));
+  //   return separator <= 0 ? null : path.substring(0, separator);
+  // }
+
+  Future<void> exportClip(double start, double end) async {
+    // get clip as bytes
+    final clipPath = await getWavClip(start, end);
+    logger.i("writing temp file $clipPath");
+
+    // await FileSaver.instance.saveAs(
+    //   name: '${value.audioPath}-clip-$start$end',
+    //   filePath: clipPath,
+    //   fileExtension: 'wav',
+    //   includeExtension: true,
+    //   mimeType: MimeType.mp3,
+    //   // initialDirectory: _pickedDirectory,
+    //   dialogTitle: 'Choose where to save the file',
+    // );
+    final outDir = await FileSaver.instance.saveFile(
+      name: path.basename(clipPath),
+      filePath: clipPath,
+      // fileExtension: "wav",
+      mimeType: MimeType.mp3,
+    );
+    logger.i("saved to $outDir/example_audio-output.wav");
+  }
 }

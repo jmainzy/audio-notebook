@@ -14,6 +14,7 @@ class SegmentCard extends StatefulWidget {
     required this.onNotesChanged,
     required this.onLanguageChanged,
     required this.onDelete,
+    required this.onExport,
     this.onDoubleTap,
     this.onClear,
   });
@@ -26,6 +27,7 @@ class SegmentCard extends StatefulWidget {
   final ValueChanged<String> onNotesChanged;
   final ValueChanged<SegmentLanguage> onLanguageChanged;
   final VoidCallback onDelete;
+  final VoidCallback onExport;
   final VoidCallback? onDoubleTap;
   final VoidCallback? onClear;
 
@@ -141,6 +143,11 @@ class _SegmentCardState extends State<SegmentCard> {
                                 color: Color(0xff887b70),
                               ),
                             ),
+                          ),
+                          IconButton(
+                            tooltip: 'Export clip',
+                            onPressed: widget.onExport,
+                            icon: const Icon(Icons.download, size: 18),
                           ),
                           DropdownButtonHideUnderline(
                             child: DropdownButton<SegmentLanguage>(

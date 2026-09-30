@@ -194,6 +194,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           onDoubleTap: (idx) {
                             widget.pageManager.enterFocusMode(idx);
                           },
+                          onExport: (int id, double start, double end) {
+                            widget.pageManager.exportClip(start, end);
+                          },
                         ),
                       ),
                       const SizedBox(height: 16),

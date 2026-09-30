@@ -16,6 +16,7 @@ class FragmentList extends StatefulWidget {
   final Function(int) onCapture;
   final Function(int) onClear;
   final Function(int) onDelete;
+  final Function(int, double, double) onExport;
   final void Function(int, String) onTextChanged;
   final void Function(int, String) onNotesChanged;
   final void Function(int, SegmentLanguage) onLanguageChanged;
@@ -32,6 +33,7 @@ class FragmentList extends StatefulWidget {
     required this.onCapture,
     required this.onClear,
     required this.onDelete,
+    required this.onExport,
     required this.onTextChanged,
     required this.onNotesChanged,
     required this.onLanguageChanged,
@@ -129,6 +131,9 @@ class _StudioFragmentListState extends State<FragmentList> {
               onNotesChanged: (notes) => widget.onNotesChanged(i, notes),
               onLanguageChanged: (language) =>
                   widget.onLanguageChanged(i, language),
+              onExport: () {
+                widget.onExport(i, f.start, f.end);
+              },
             );
           },
           separatorBuilder: (BuildContext context, int index) {
@@ -139,5 +144,3 @@ class _StudioFragmentListState extends State<FragmentList> {
     );
   }
 }
-
-
