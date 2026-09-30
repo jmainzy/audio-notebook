@@ -500,26 +500,29 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   //   return separator <= 0 ? null : path.substring(0, separator);
   // }
 
-  Future<void> exportClip(double start, double end) async {
+  void openNativeFileManager(String path) {
+  if (Platform.isMacOS) {
+    Process.run('open', ['-R', path]); // macOS Finder
+  } else if (Platform.isWindows) {
+    Process.run('explorer.exe', ['/select,', path]); // Windows Explorer
+  }
+}
+
+  Future<String> exportClip(double start, double end) async {
     // get clip as bytes
     final clipPath = await getWavClip(start, end);
     logger.i("writing temp file $clipPath");
 
-    // await FileSaver.instance.saveAs(
-    //   name: '${value.audioPath}-clip-$start$end',
-    //   filePath: clipPath,
-    //   fileExtension: 'wav',
-    //   includeExtension: true,
-    //   mimeType: MimeType.mp3,
-    //   // initialDirectory: _pickedDirectory,
-    //   dialogTitle: 'Choose where to save the file',
-    // );
-    final outDir = await FileSaver.instance.saveFile(
+    // saves do Downloads. 
+    // TODO: implement filepicker
+    final outPath = await FileSaver.instance.saveFile(
       name: path.basename(clipPath),
       filePath: clipPath,
       // fileExtension: "wav",
       mimeType: MimeType.mp3,
     );
-    logger.i("saved to $outDir/example_audio-output.wav");
+
+    logger.i("saved to $outPath");
+    return outPath;
   }
 }

@@ -7,6 +7,7 @@ import 'package:audionotebook/ui/audio_page/segment_list.dart';
 import 'package:audionotebook/ui/audio_page/waveform/waveform_view.dart';
 import 'package:audionotebook/utils/dimens.dart';
 import 'package:audionotebook/utils/utils.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:logger/web.dart';
 
@@ -195,7 +196,46 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                             widget.pageManager.enterFocusMode(idx);
                           },
                           onExport: (int id, double start, double end) {
-                            widget.pageManager.exportClip(start, end);
+                            widget.pageManager
+                                .exportClip(start, end)
+                                .then(
+                                  (String outPath) => {
+                                    if (mounted)
+                                      {
+                                        ScaffoldMessenger.of(
+                                          context,
+                                        ).showSnackBar(
+                                          SnackBar(
+                                            content: RichText(
+                                              text: TextSpan(
+                                                // style: defaultStyle,
+                                                children: <TextSpan>[
+                                                  TextSpan(
+                                                    text:
+                                                        'Clip saved to $outPath ',
+                                                  ),
+                                                  TextSpan(
+                                                    text: 'Show',
+                                                    style: TextStyle(
+                                                      color: Colors.blue,
+                                                    ),
+                                                    recognizer:
+                                                        TapGestureRecognizer()
+                                                          ..onTap = () {
+                                                            widget.pageManager
+                                                                .openNativeFileManager(
+                                                                  outPath,
+                                                                );
+                                                          },
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      },
+                                  },
+                                );
                           },
                         ),
                       ),
