@@ -179,6 +179,9 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                               widget.pageManager.updateFragmentNotes,
                           onLanguageChanged:
                               widget.pageManager.updateFragmentLanguage,
+                          onAddComment:
+                              widget.pageManager.beginCommentRecording,
+                          isRecordingComment: state.isRecordingComment,
                           onCapture: (i) => widget.pageManager
                               .captureFragmentTiming(context, i),
                           onClear: widget.pageManager.clearFragmentTiming,
@@ -272,18 +275,26 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           ),
                           Container(
                             decoration: BoxDecoration(
-                              color: const Color(0xff292521),
+                              color: state.isRecordingComment
+                                  ? Colors.red.shade700
+                                  : const Color(0xff292521),
                               borderRadius: BorderRadius.circular(28),
                             ),
                             child: IconButton(
                               onPressed: state.audioPath == null
                                   ? null
+                                  : state.isRecordingComment
+                                  ? widget.pageManager.stopCommentRecording
                                   : widget.pageManager.togglePlayback,
-                              tooltip: state.isPlaying
+                              tooltip: state.isRecordingComment
+                                  ? 'Stop comment recording'
+                                  : state.isPlaying
                                   ? 'Pause recording'
                                   : 'Play recording',
                               icon: Icon(
-                                state.isPlaying
+                                state.isRecordingComment
+                                    ? Icons.stop
+                                    : state.isPlaying
                                     ? Icons.pause
                                     : Icons.play_arrow,
                                 color: Colors.white,

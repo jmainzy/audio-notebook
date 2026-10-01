@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:audionotebook/model/voice_segment.dart';
+import 'package:audionotebook/ui/audio_page/waveform/waveform_painter.dart';
+import 'package:audionotebook/utils/audio_utils.dart';
 import 'package:audionotebook/utils/dimens.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/material.dart';
+import 'package:just_waveform/just_waveform.dart';
 
 class SegmentCard extends StatefulWidget {
   const SegmentCard({
@@ -135,57 +140,71 @@ class _SegmentCardState extends State<SegmentCard> {
                       Row(
                         children: [
                           Expanded(
-                            child: Text(
-                              '${formatDuration(Duration(milliseconds: (widget.segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (widget.segment.end * 1000).round()))}',
-                              style: const TextStyle(
-                                fontFamily: 'Arial',
-                                fontSize: 12,
-                                color: Color(0xff887b70),
-                              ),
-                            ),
-                          ),
-                          IconButton(
-                            tooltip: 'Export clip',
-                            onPressed: widget.onExport,
-                            icon: const Icon(Icons.download, size: 18),
-                          ),
-                          DropdownButtonHideUnderline(
-                            child: DropdownButton<SegmentLanguage>(
-                              value: widget.segment.language,
-                              isDense: true,
-                              iconSize: 18,
-                              items: SegmentLanguage.values
-                                  .map(
-                                    (language) => DropdownMenuItem(
-                                      value: language,
-                                      child: Row(
-                                        mainAxisSize: MainAxisSize.min,
-                                        children: [
-                                          Container(
-                                            width: 10,
-                                            height: 10,
-                                            decoration: BoxDecoration(
-                                              color: language.color,
-                                              shape: BoxShape.circle,
-                                            ),
-                                          ),
-                                          const SizedBox(width: 6),
-                                          Text(
-                                            language.label,
-                                            style: TextStyle(fontSize: 12),
-                                          ),
-                                        ],
-                                      ),
+                            child: widget.segment.isComment
+                                ? Text(
+                                    'Comment',
+                                    style: TextStyle(
+                                      color: widget.segment.language.color,
+                                      fontWeight: FontWeight.w700,
                                     ),
                                   )
-                                  .toList(),
-                              onChanged: (language) {
-                                if (language != null) {
-                                  widget.onLanguageChanged(language);
-                                }
-                              },
-                            ),
+                                : Text(
+                                    '${formatDuration(Duration(milliseconds: (widget.segment.start * 1000).round()))} - ${formatDuration(Duration(milliseconds: (widget.segment.end * 1000).round()))}',
+                                    style: const TextStyle(
+                                      fontFamily: 'Arial',
+                                      fontSize: 12,
+                                      color: Color(0xff887b70),
+                                    ),
+                                  ),
                           ),
+                          if (!widget.segment.isComment)
+                            IconButton(
+                              tooltip: 'Export clip',
+                              onPressed: widget.onExport,
+                              icon: const Icon(Icons.download, size: 18),
+                            ),
+                          if (!widget.segment.isComment)
+                            DropdownButtonHideUnderline(
+                              child: DropdownButton<SegmentLanguage>(
+                                value: widget.segment.language,
+                                isDense: true,
+                                iconSize: 18,
+                                items: SegmentLanguage.values
+                                    .where(
+                                      (language) =>
+                                          language != SegmentLanguage.comment,
+                                    )
+                                    .map(
+                                      (language) => DropdownMenuItem(
+                                        value: language,
+                                        child: Row(
+                                          mainAxisSize: MainAxisSize.min,
+                                          children: [
+                                            Container(
+                                              width: 10,
+                                              height: 10,
+                                              decoration: BoxDecoration(
+                                                color: language.color,
+                                                shape: BoxShape.circle,
+                                              ),
+                                            ),
+                                            const SizedBox(width: 6),
+                                            Text(
+                                              language.label,
+                                              style: TextStyle(fontSize: 12),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    )
+                                    .toList(),
+                                onChanged: (language) {
+                                  if (language != null) {
+                                    widget.onLanguageChanged(language);
+                                  }
+                                },
+                              ),
+                            ),
                           IconButton(
                             tooltip: 'Delete segment',
                             onPressed: widget.onDelete,
@@ -199,7 +218,18 @@ class _SegmentCardState extends State<SegmentCard> {
                         ],
                       ),
                       SizedBox(height: Dimens.marginShort),
-                      if (_isEditingText)
+                      if (widget.segment.isComment)
+                        Row(
+                          children: [
+                            Icon(Icons.play_arrow),
+                            Expanded(
+                              child: MiniWaveform(
+                                audioPath: 'assets/sample.wav',
+                              ),
+                            ),
+                          ],
+                        )
+                      else if (_isEditingText)
                         TextField(
                           controller: _textController,
                           focusNode: _textFocusNode,
@@ -207,7 +237,7 @@ class _SegmentCardState extends State<SegmentCard> {
                           maxLines: 3,
                           textCapitalization: TextCapitalization.sentences,
                           decoration: const InputDecoration(
-                            hintText: 'Transcription here',
+                            hintText: '...',
                             isDense: true,
                             border: OutlineInputBorder(),
                           ),
@@ -221,11 +251,10 @@ class _SegmentCardState extends State<SegmentCard> {
                             width: double.infinity,
                             child: Text(
                               widget.segment.text.isEmpty
-                                  ? 'Transcription here'
+                                  ? '...'
                                   : widget.segment.text,
                               maxLines: 1,
                               overflow: TextOverflow.ellipsis,
-                              style: const TextStyle(fontSize: 13),
                             ),
                           ),
                         ),
@@ -236,6 +265,7 @@ class _SegmentCardState extends State<SegmentCard> {
                         minLines: 1,
                         maxLines: 2,
                         textCapitalization: TextCapitalization.sentences,
+                        style: Theme.of(context).textTheme.bodyMedium,
                         decoration: const InputDecoration(
                           hintText: 'Notes',
                           isDense: true,
@@ -253,6 +283,65 @@ class _SegmentCardState extends State<SegmentCard> {
           ),
         ),
       ),
+    );
+  }
+}
+
+class MiniWaveform extends StatefulWidget {
+  final String audioPath;
+  const MiniWaveform({super.key, required this.audioPath});
+
+  @override
+  State<MiniWaveform> createState() => _MiniWaveformState();
+}
+
+class _MiniWaveformState extends State<MiniWaveform> {
+  final ValueNotifier<Waveform?> _waveformNotifier = ValueNotifier(null);
+
+  @override
+  void initState() {
+    super.initState();
+    _loadWaveform();
+  }
+
+  Future<void> _loadWaveform() async {
+    (await AudioUtils.generateWaveform(widget.audioPath))?.listen((progress) {
+      _waveformNotifier.value = progress.waveform;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: _waveformNotifier,
+      builder: (BuildContext ctx, child) {
+        if (_waveformNotifier.value == null) {
+          return const SizedBox(height: 40, child: CircularProgressIndicator());
+        }
+        return SizedBox(
+          height: 40,
+          child: LayoutBuilder(
+            builder: (ctx, constraints) {
+              return CustomPaint(
+                size: Size(constraints.maxWidth, constraints.maxHeight),
+                painter: WaveformPainter(
+                  waveform: _waveformNotifier.value!,
+                  fragments: const [],
+                  playbackPosSeconds: 0,
+                  totalSeconds: 100,
+                  zoomLevel: 1.0,
+                  accentColor: Theme.of(context).colorScheme.onSecondary,
+                  waveColor: Colors.grey,
+                  playheadColor: Colors.transparent,
+                  pinnedColor: Colors.green,
+                  contentWidth: constraints.maxWidth,
+                  padding: Dimens.marginShort,
+                ),
+              );
+            },
+          ),
+        );
+      },
     );
   }
 }

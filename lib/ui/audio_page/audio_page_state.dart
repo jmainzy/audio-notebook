@@ -18,6 +18,7 @@ class AudioPageState {
   final bool isReadOnly;
   final bool isTranscribing;
   final bool isSegmenting;
+  final bool isRecordingComment;
   final PlaybackMode playbackMode;
   // final ClaimInfo? activeClaim;
 
@@ -36,6 +37,7 @@ class AudioPageState {
     this.isReadOnly = false,
     this.isTranscribing = false,
     this.isSegmenting = false,
+    this.isRecordingComment = false,
     this.playbackMode = PlaybackMode.fullRecording,
   });
 
@@ -63,6 +65,7 @@ class AudioPageState {
     bool? isReadOnly,
     bool? isTranscribing,
     bool? isSegmenting,
+    bool? isRecordingComment,
     PlaybackMode? playbackMode,
   }) {
     return AudioPageState(
@@ -84,6 +87,7 @@ class AudioPageState {
       isReadOnly: isReadOnly ?? this.isReadOnly,
       isTranscribing: isTranscribing ?? this.isTranscribing,
       isSegmenting: isSegmenting ?? this.isSegmenting,
+      isRecordingComment: isRecordingComment ?? this.isRecordingComment,
       playbackMode: playbackMode ?? this.playbackMode,
     );
   }

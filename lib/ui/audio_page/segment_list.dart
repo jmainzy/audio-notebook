@@ -20,6 +20,8 @@ class FragmentList extends StatefulWidget {
   final void Function(int, String) onTextChanged;
   final void Function(int, String) onNotesChanged;
   final void Function(int, SegmentLanguage) onLanguageChanged;
+  final void Function(int) onAddComment;
+  final bool isRecordingComment;
 
   const FragmentList({
     super.key,
@@ -37,6 +39,8 @@ class FragmentList extends StatefulWidget {
     required this.onTextChanged,
     required this.onNotesChanged,
     required this.onLanguageChanged,
+    required this.onAddComment,
+    required this.isRecordingComment,
   });
 
   @override
@@ -46,6 +50,7 @@ class FragmentList extends StatefulWidget {
 class _StudioFragmentListState extends State<FragmentList> {
   final ItemScrollController _itemScrollController = ItemScrollController();
   int _lastActiveIndex = -1;
+  int? _hoveredGap;
 
   @override
   void initState() {
@@ -137,7 +142,39 @@ class _StudioFragmentListState extends State<FragmentList> {
             );
           },
           separatorBuilder: (BuildContext context, int index) {
-            return SizedBox(height: Dimens.marginShort);
+            final isHovered = _hoveredGap == index;
+            return MouseRegion(
+              onEnter: (_) => setState(() => _hoveredGap = index),
+              onExit: (_) {
+                if (_hoveredGap == index) {
+                  setState(() => _hoveredGap = null);
+                }
+              },
+              child: SizedBox(
+                height: Dimens.marginShort,
+                child: Center(
+                  child: AnimatedOpacity(
+                    opacity: isHovered ? 1 : 0,
+                    duration: const Duration(milliseconds: 120),
+                    child: IgnorePointer(
+                      ignoring: !isHovered,
+                      child: IconButton(
+                        tooltip: 'Add comment recording',
+                        onPressed: widget.isRecordingComment
+                            ? null
+                            : () => widget.onAddComment(index + 1),
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints.tightFor(
+                          width: 32,
+                          height: 32,
+                        ),
+                        icon: const Icon(Icons.add_circle, size: 22),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            );
           },
         );
       },

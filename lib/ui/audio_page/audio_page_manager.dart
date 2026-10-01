@@ -6,14 +6,15 @@ import 'dart:math';
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
 import 'package:audionotebook/ui/audio_page/audio_page_state.dart';
+import 'package:audionotebook/utils/audio_utils.dart';
 import 'package:audionotebook/utils/vad.dart';
 import 'package:ffmpeg_kit_flutter_new/ffmpeg_kit.dart';
 import 'package:file_saver/file_saver.dart';
 import 'package:flutter/material.dart';
-import 'package:just_waveform/just_waveform.dart';
 import 'package:logger/logger.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:record/record.dart';
 import 'package:wav/wav_file.dart';
 
 Logger logger = Logger();
@@ -24,6 +25,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   // final asrController = WhisperController();
   bool _segmentPlaybackActive = false;
   int _segmentPlaybackGeneration = 0;
+  int? _commentInsertIndex;
 
   AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
     _audioService.positionStream.listen((pos) {
@@ -50,28 +52,12 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   }
 
   Future<void> _generateWaveform(String audioPath) async {
-    try {
-      final tempDir = await getTemporaryDirectory();
-      if (!await tempDir.exists()) await tempDir.create(recursive: true);
-
-      final stat = await File(audioPath).stat();
-      final fileHash = '${stat.size}_${stat.modified.millisecondsSinceEpoch}';
-
-      final waveFile = File(
-        path.join(tempDir.path, '${path.basename(audioPath)}_$fileHash.wave'),
-      );
-
-      JustWaveform.extract(
-        audioInFile: File(audioPath),
-        waveOutFile: waveFile,
-      ).listen((event) {
-        if (event.waveform != null) {
-          value = value.copyWith(waveform: event.waveform);
-        }
-      });
-    } catch (e) {
-      debugPrint("Waveform error: $e");
-    }
+    final progressStream = await AudioUtils.generateWaveform(audioPath);
+    progressStream?.listen((event) {
+      if (event.waveform != null) {
+        value = value.copyWith(waveform: event.waveform);
+      }
+    });
   }
 
   Future<void> detectSegments() async {
@@ -97,7 +83,7 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
             end: detected[index].end * durationSeconds,
             text: detected[index].text,
             language: SegmentLanguage
-                .values[random.nextInt(SegmentLanguage.values.length)],
+                .values[random.nextInt(SegmentLanguage.values.length - 1)],
           ),
       ];
       value = value.copyWith(fragments: segments);
@@ -135,6 +121,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
                 (language) => language.name == item['language'],
                 orElse: () => SegmentLanguage.mixed,
               ),
+              isComment: item['isComment'] as bool? ?? false,
+              audioPath: item['audioPath'] as String?,
             ),
           )
           .toList();
@@ -163,6 +151,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
             'text': segment.text,
             'notes': segment.notes,
             'language': segment.language.name,
+            'isComment': segment.isComment,
+            'audioPath': segment.audioPath,
           },
       ];
       await cacheFile.writeAsString(jsonEncode(cache));
@@ -204,6 +194,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
           text: remaining[newIndex].text,
           notes: remaining[newIndex].notes,
           language: remaining[newIndex].language,
+          isComment: remaining[newIndex].isComment,
+          audioPath: remaining[newIndex].audioPath,
         ),
     ];
     final selectedIndex = value.selectedFragmentIndex;
@@ -255,6 +247,56 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
 
   void setPlaybackMode(PlaybackMode mode) {
     value = value.copyWith(playbackMode: mode);
+  }
+
+  void beginCommentRecording(int insertIndex) {
+    if (value.isRecordingComment) return;
+    if (value.isPlaying) unawaited(togglePlayback());
+    _commentInsertIndex = insertIndex;
+    value = value.copyWith(isRecordingComment: true, isPlaying: false);
+  }
+
+  Future<void> stopCommentRecording() async {
+    if (!value.isRecordingComment) return;
+
+    final fragments = List<Segment>.from(value.fragments);
+    final insertIndex = (_commentInsertIndex ?? fragments.length).clamp(
+      0,
+      fragments.length,
+    );
+    fragments.insert(
+      insertIndex,
+      Segment(
+        index: insertIndex,
+        start: -1,
+        end: -1,
+        language: SegmentLanguage.comment,
+        isComment: true,
+      ),
+    );
+    final reindexed = [
+      for (var index = 0; index < fragments.length; index++)
+        Segment(
+          index: index,
+          start: fragments[index].start,
+          end: fragments[index].end,
+          text: fragments[index].text,
+          notes: fragments[index].notes,
+          language: fragments[index].language,
+          isComment: fragments[index].isComment,
+          audioPath: fragments[index].audioPath,
+        ),
+    ];
+    _commentInsertIndex = null;
+    value = value.copyWith(
+      fragments: reindexed,
+      isRecordingComment: false,
+      hasUnsavedChanges: true,
+      selectedFragmentIndex: insertIndex,
+    );
+
+    final audioPath = value.audioPath;
+    if (audioPath != null) await _saveSegments(audioPath, reindexed);
   }
 
   Future<void> togglePlayback() async {
@@ -416,6 +458,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       text: text,
       notes: fragment.notes,
       language: fragment.language,
+      isComment: fragment.isComment,
+      audioPath: fragment.audioPath,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
 
@@ -437,6 +481,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       text: fragment.text,
       notes: fragment.notes,
       language: language,
+      isComment: fragment.isComment,
+      audioPath: fragment.audioPath,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
 
@@ -458,6 +504,8 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       text: fragment.text,
       notes: notes,
       language: fragment.language,
+      isComment: fragment.isComment,
+      audioPath: fragment.audioPath,
     );
     value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
 
@@ -501,19 +549,19 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
   // }
 
   void openNativeFileManager(String path) {
-  if (Platform.isMacOS) {
-    Process.run('open', ['-R', path]); // macOS Finder
-  } else if (Platform.isWindows) {
-    Process.run('explorer.exe', ['/select,', path]); // Windows Explorer
+    if (Platform.isMacOS) {
+      Process.run('open', ['-R', path]); // macOS Finder
+    } else if (Platform.isWindows) {
+      Process.run('explorer.exe', ['/select,', path]); // Windows Explorer
+    }
   }
-}
 
   Future<String> exportClip(double start, double end) async {
     // get clip as bytes
     final clipPath = await getWavClip(start, end);
     logger.i("writing temp file $clipPath");
 
-    // saves do Downloads. 
+    // saves do Downloads.
     // TODO: implement filepicker
     final outPath = await FileSaver.instance.saveFile(
       name: path.basename(clipPath),
@@ -524,5 +572,25 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
 
     logger.i("saved to $outPath");
     return outPath;
+  }
+
+  Future<void> startRecording() async {
+    final record = AudioRecorder();
+    // Check and request permission if needed
+    if (await record.hasPermission()) {
+      // Start recording to file
+      await record.start(const RecordConfig(), path: 'aFullPath/myFile.m4a');
+      // ... or to stream
+      final stream = await record.startStream(
+        const RecordConfig(encoder: AudioEncoder.pcm16bits),
+      );
+    }
+
+    // Stop recording...
+    final path = await record.stop();
+    // ... or cancel it (and implicitly remove file/blob).
+    await record.cancel();
+
+    record.dispose(); // As always, don't forget this one.
   }
 }
