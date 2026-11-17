@@ -45,6 +45,9 @@ dependencies:
   scrollable_positioned_list: ^0.3.8
   file_saver: ^0.6.0
   record: ^7.1.1
+  material_ui: ^1.11.1
+  crypto: ^3.0.8
+  http: ^1.6.0
 
 dev_dependencies:
   flutter_test:

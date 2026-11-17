@@ -1,5 +1,5 @@
 import 'package:audionotebook/model/voice_segment.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/widgets.dart';
 import 'package:just_waveform/just_waveform.dart';
 
 class WaveformPainter extends CustomPainter {
@@ -92,7 +92,7 @@ class WaveformPainter extends CustomPainter {
         canvas.drawRect(
           Rect.fromLTRB(xStart + 1, 1, xEnd - 1, size.height - 1),
           Paint()
-            ..color = Colors.white
+            ..color = Color.fromRGBO(255, 255, 255, 1.0)
             ..style = PaintingStyle.stroke
             ..strokeWidth = 2,
         );
