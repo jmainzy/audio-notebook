@@ -5,6 +5,7 @@ import 'dart:math';
 
 import 'package:audionotebook/model/voice_segment.dart';
 import 'package:audionotebook/services/audio_service.dart';
+import 'package:audionotebook/services/mms_transcription_service.dart';
 import 'package:audionotebook/ui/audio_page/audio_page_state.dart';
 import 'package:audionotebook/utils/audio_utils.dart';
 import 'package:audionotebook/utils/vad.dart';
@@ -21,11 +22,14 @@ Logger logger = Logger();
 
 class AudioPageManager extends ValueNotifier<AudioPageState> {
   final AudioService _audioService = AudioService();
+  final MmsTranscriptionService _transcriptionService =
+      MmsTranscriptionService();
   final playbackPosition = ValueNotifier(Duration.zero);
   // final asrController = WhisperController();
   bool _segmentPlaybackActive = false;
   int _segmentPlaybackGeneration = 0;
   int? _commentInsertIndex;
+  Future<void> _saveQueue = Future<void>.value();
 
   AudioPageManager() : super(AudioPageState(zoomLevel: 10.0)) {
     _audioService.positionStream.listen((pos) {
@@ -60,13 +64,13 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
     });
   }
 
-  Future<void> detectSegments() async {
+  Future<void> detectSegments({String? decodedAudioPath}) async {
     value = value.copyWith(isSegmenting: true);
     try {
       final audioPath = value.audioPath;
       if (audioPath == null) return;
 
-      final bytes = await File(audioPath).readAsBytes();
+      final bytes = await File(decodedAudioPath ?? audioPath).readAsBytes();
       final wav = Wav.read(bytes);
       sampleRate = wav.samplesPerSecond;
       final audioData = wav.channels[0];
@@ -132,7 +136,24 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
     }
   }
 
-  Future<void> _saveSegments(String audioPath, List<Segment> segments) async {
+  Future<void> _saveSegments(
+    String audioPath,
+    List<Segment> segments, {
+    bool rethrowOnError = false,
+  }) {
+    final save = _saveQueue.then(
+      (_) =>
+          _writeSegments(audioPath, segments, rethrowOnError: rethrowOnError),
+    );
+    _saveQueue = save.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return save;
+  }
+
+  Future<void> _writeSegments(
+    String audioPath,
+    List<Segment> segments, {
+    required bool rethrowOnError,
+  }) async {
     try {
       final cacheFile = await _segmentsCacheFile();
       final cache = <String, dynamic>{};
@@ -158,21 +179,70 @@ class AudioPageManager extends ValueNotifier<AudioPageState> {
       await cacheFile.writeAsString(jsonEncode(cache));
     } catch (error) {
       logger.w('Could not save segments: $error');
+      if (rethrowOnError) rethrow;
     }
   }
 
   Future<void> transcribe() async {
+    if (value.isTranscribing || value.isReadOnly) return;
+    final audioPath = value.audioPath;
+    if (audioPath == null) throw StateError('No audio file is loaded.');
     value = value.copyWith(isTranscribing: true);
-    logger.i('transcribe');
-    // if (value.audioPath != null) {
-    //   final result = await asrController.transcribe(
-    //     model: WhisperModel.tiny,
-    //     audioPath: value.audioPath!,
-    //     lang: 'en',
-    //   );
-    //   logger.i(result?.transcription.text);
-    // }
-    value = value.copyWith(isTranscribing: false);
+    File? decoded;
+    try {
+      decoded = await _transcriptionService.prepareAudio(audioPath);
+      if (value.fragments.isEmpty) {
+        await detectSegments(decodedAudioPath: decoded.path);
+      }
+      final pending = value.fragments
+          .where(
+            (segment) =>
+                !segment.isComment &&
+                segment.text.trim().isEmpty &&
+                segment.start >= 0 &&
+                segment.end > segment.start,
+          )
+          .toList();
+      if (pending.isEmpty) {
+        throw StateError('No empty timed segments to transcribe.');
+      }
+      final timings = [
+        for (final segment in pending) (start: segment.start, end: segment.end),
+      ];
+      final results = await _transcriptionService.transcribe(decoded, timings);
+      if (value.audioPath != audioPath) {
+        throw StateError('The recording changed during transcription.');
+      }
+      final fragments = List<Segment>.from(value.fragments);
+      for (var i = 0; i < pending.length; i++) {
+        final segment = pending[i];
+        final index = fragments.indexOf(segment);
+        if (index < 0 ||
+            segment.start != timings[i].start ||
+            segment.end != timings[i].end ||
+            segment.text.trim().isNotEmpty) {
+          continue;
+        }
+        fragments[index] = Segment(
+          index: segment.index,
+          start: segment.start,
+          end: segment.end,
+          text: results[i],
+          notes: segment.notes,
+          language: SegmentLanguage.mvskoke,
+          isComment: segment.isComment,
+          audioPath: segment.audioPath,
+        );
+      }
+      value = value.copyWith(fragments: fragments, hasUnsavedChanges: true);
+      await _saveSegments(audioPath, fragments, rethrowOnError: true);
+    } finally {
+      try {
+        if (decoded != null) await decoded.parent.delete(recursive: true);
+      } finally {
+        value = value.copyWith(isTranscribing: false);
+      }
+    }
   }
 
   void selectFragment(int? index) {

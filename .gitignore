@@ -46,5 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+.venv-mms-export/
 assets/sherpa-model
 silero_vad.onnx

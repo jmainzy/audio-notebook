@@ -8,7 +8,7 @@ import 'package:audionotebook/ui/audio_page/waveform/waveform_view.dart';
 import 'package:audionotebook/utils/dimens.dart';
 import 'package:audionotebook/utils/utils.dart';
 import 'package:flutter/gestures.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:logger/web.dart';
 
 Logger logger = Logger();
@@ -104,7 +104,8 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           Align(
                             alignment: Alignment.centerLeft,
                             child: FilledButton.icon(
-                              onPressed: state.isSegmenting
+                              onPressed:
+                                  state.isSegmenting || state.isTranscribing
                                   ? null
                                   : widget.pageManager.detectSegments,
                               label: const Text('Detect Segments'),
@@ -112,10 +113,29 @@ class _AudioDetailPageState extends State<AudioDetailPage> {
                           ),
                           SizedBox(width: Dimens.marginShort),
                           FilledButton.icon(
-                            onPressed: state.isTranscribing
+                            onPressed:
+                                state.isTranscribing || state.isSegmenting
                                 ? null
-                                : widget.pageManager.transcribe,
-                            label: const Text('Transcribe'),
+                                : () async {
+                                    try {
+                                      await widget.pageManager.transcribe();
+                                    } catch (error) {
+                                      if (!context.mounted) return;
+                                      ScaffoldMessenger.of(context)
+                                          .showSnackBar(
+                                            SnackBar(
+                                              content: Text(
+                                                'Transcription failed: $error',
+                                              ),
+                                            ),
+                                          );
+                                    }
+                                  },
+                            label: Text(
+                              state.isTranscribing
+                                  ? 'Transcribing...'
+                                  : 'Transcribe',
+                            ),
                           ),
                         ],
                       ),

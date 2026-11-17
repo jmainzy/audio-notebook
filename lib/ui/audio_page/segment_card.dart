@@ -5,7 +5,7 @@ import 'package:audionotebook/ui/audio_page/waveform/waveform_painter.dart';
 import 'package:audionotebook/utils/audio_utils.dart';
 import 'package:audionotebook/utils/dimens.dart';
 import 'package:audionotebook/utils/utils.dart';
-import 'package:flutter/material.dart';
+import 'package:material_ui/material_ui.dart';
 import 'package:just_waveform/just_waveform.dart';
 
 class SegmentCard extends StatefulWidget {
